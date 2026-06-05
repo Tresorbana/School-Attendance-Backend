@@ -1,0 +1,177 @@
+2026-06-05 08:17:59 [DEBUG] asyncio: Using proactor: IocpProactor
+INFO:     Started server process [4744]
+INFO:     Waiting for application startup.
+2026-06-05 08:18:00 [INFO] database: Structured DB schema ensured.
+2026-06-05 08:18:00 [INFO] app: SAMS backend ready on port 8000 [development]
+INFO:     Application startup complete.
+2026-06-05 08:18:00 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-06-05 08:18:00 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:18:03 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:03 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:18:03 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:18:05 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:05 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:18:08 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:08 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:18:08 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:18:12 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:12 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:18:15 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:15 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:18:15 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:18:26 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:26 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:18:29 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:29 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:18:29 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:18:45 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:45 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:18:48 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:18:48 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:18:48 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:19:18 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:19:18 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:19:21 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:19:21 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:19:21 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:19:52 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:19:52 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:19:55 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:19:55 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:19:55 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:20:25 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:20:25 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:20:28 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:20:28 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:20:28 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:20:58 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:20:58 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:21:02 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:21:02 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:21:02 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:21:34 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:21:34 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:21:37 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:21:37 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:21:37 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:22:07 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:22:07 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:22:10 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:22:10 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:22:10 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:22:41 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:22:41 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:22:44 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:22:44 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:22:44 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:23:14 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:23:14 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:23:17 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:23:17 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:23:17 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:23:47 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:23:47 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:23:50 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:23:50 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:23:50 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:24:20 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:24:20 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:24:24 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:24:24 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:24:24 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:24:54 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:24:54 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:24:57 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:24:57 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:24:57 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:25:27 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:25:27 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:25:30 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:25:30 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:25:30 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:26:01 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:26:01 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:26:04 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:26:04 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:26:04 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:26:34 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:26:34 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:26:37 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:26:37 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:26:37 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:27:07 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:27:07 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:27:10 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:27:10 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:27:11 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:27:41 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:27:41 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:27:44 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:27:44 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:27:44 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:28:14 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:28:14 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:28:17 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:28:17 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:28:17 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:28:48 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:28:48 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:28:51 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:28:51 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:28:51 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:29:21 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:29:21 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:29:24 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:29:24 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:29:24 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:29:55 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:29:55 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:29:58 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:29:58 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:29:58 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:30:28 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:30:28 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:30:31 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:30:31 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:30:31 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:31:01 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:31:01 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:31:04 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:31:04 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:31:04 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:31:34 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:31:34 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:31:37 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:31:37 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:31:38 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:32:10 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:32:10 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:32:13 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:32:13 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:32:13 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:32:43 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:32:43 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:32:46 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:32:46 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:32:46 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:33:17 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:33:17 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:33:20 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:33:20 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:33:20 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:33:50 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:33:50 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:33:53 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:33:53 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:33:53 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:34:23 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:34:23 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:34:26 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:34:26 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:34:26 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
+2026-06-05 08:34:57 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:34:57 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+2026-06-05 08:35:00 [DEBUG] scanner: Pipe connect failed: [Errno 22] Invalid argument: '\\\\.\\pipe\\AttendAIFingerprint'
+2026-06-05 08:35:00 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\attendance-api\bridge\FingerprintBridge.exe
+2026-06-05 08:35:00 [ERROR] scanner: Bridge error [DPFP_INIT_ERROR]: Failed to start fingerprint reader: Failed to start acquisition — ensure the U.are.U 4500 is plugged in and DPFPApi.dll is in System32.
