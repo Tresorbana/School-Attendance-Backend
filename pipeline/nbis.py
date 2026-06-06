@@ -94,50 +94,136 @@ def is_available() -> bool:
     return bool(m and b)
 
 
-# ── PGM helpers ─────────────────────────────────────────────────────────
+# ── Image writer ────────────────────────────────────────────────────────
+#
+# mindtct accepts WSQ, JPEG-B (baseline), JPEG-L (lossless), ANSI/NIST, and
+# IHEAD. It does NOT accept PNG, PGM, or BMP. We write baseline JPEG at high
+# quality — OpenCV produces it natively and mindtct decodes it fine.
 
 
-def _save_pgm(img: np.ndarray, path: Path) -> None:
-    """Write a uint8 grayscale numpy array to PGM (binary P5)."""
+def _save_image_for_mindtct(img: np.ndarray, path: Path) -> None:
+    """Write a uint8 grayscale numpy array as baseline JPEG (one of mindtct's
+    natively-supported formats)."""
     if img.dtype != np.uint8:
         img = np.clip(img, 0, 255).astype(np.uint8)
     if len(img.shape) == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    h, w = img.shape[:2]
-    with open(path, "wb") as f:
-        f.write(f"P5\n{w} {h}\n255\n".encode("ascii"))
-        f.write(img.tobytes())
+    # Quality 95 — visually lossless for ridge structure.
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    if not ok:
+        raise RuntimeError("cv2.imencode failed for fingerprint JPEG")
+    path.write_bytes(buf.tobytes())
 
 
 # ── mindtct: image -> minutiae .xyt ─────────────────────────────────────
 
 
+def _prepare_for_mindtct(image: np.ndarray) -> np.ndarray:
+    """Bring desktop-scanner output into the regime NBIS was tuned for.
+
+    Steps:
+      1. To grayscale uint8.
+      2. CLAHE — modest local contrast boost.
+      3. Upscale shorter side to ≥ 480 px (≈500dpi equivalent). NBIS was
+         tuned for FBI-spec rolled prints; the U.are.U 4500 native ~252×324
+         is too small and mindtct over-detects minutiae in noise.
+    """
+    if image is None:
+        return image
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    image = clahe.apply(image)
+
+    h, w = image.shape[:2]
+    target = 480
+    short_side = min(h, w)
+    if short_side < target:
+        scale = target / short_side
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+        image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+
+    return image
+
+
 def _mindtct_extract(image: np.ndarray) -> bytes:
     """Run mindtct, return the resulting .xyt file content as bytes."""
     _ensure_binaries()
+    prepped = _prepare_for_mindtct(image)
     with tempfile.TemporaryDirectory(prefix="nbis_mt_") as tmp:
         tmp_path = Path(tmp)
-        pgm_path = tmp_path / "input.pgm"
+        img_path = tmp_path / "input.jpg"
         out_root = tmp_path / "out"
-        _save_pgm(image, pgm_path)
+        _save_image_for_mindtct(prepped, img_path)
         try:
-            subprocess.run(
-                [str(_mindtct), str(pgm_path), str(out_root)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            # No -b flag — empirically it lowered genuine scores on
+            # U.are.U 4500 captures (15-19 → 11-12). Upscaling in
+            # _prepare_for_mindtct is the better fix.
+            result = subprocess.run(
+                [str(_mindtct), str(img_path), str(out_root)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 timeout=20,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
         except subprocess.TimeoutExpired:
-            logger.warning("mindtct timed out")
+            logger.error("mindtct timed out (>20s) — fingerprint image likely malformed")
             return b""
         except Exception as exc:
-            logger.warning("mindtct failed: %s", exc)
+            logger.error("mindtct invocation failed: %s", exc)
             return b""
+
         xyt = tmp_path / "out.xyt"
         if not xyt.exists():
+            stderr_snip = (result.stderr or b"")[:300].decode("ascii", "ignore").strip()
+            logger.error(
+                "mindtct produced no .xyt (rc=%s). stderr: %s",
+                result.returncode, stderr_snip,
+            )
             return b""
-        return xyt.read_bytes()
+
+        data = xyt.read_bytes()
+        raw_count = max(0, data.count(b"\n"))
+        filtered = _filter_xyt(data, keep_top=50)
+        kept = max(0, filtered.count(b"\n"))
+        if kept < 5:
+            logger.warning(
+                "mindtct only found %d minutiae after filter — image may be too small / low quality",
+                kept,
+            )
+        else:
+            logger.debug("mindtct extracted %d minutiae (kept top %d by quality)",
+                         raw_count, kept)
+        return filtered
+
+
+def _filter_xyt(data: bytes, keep_top: int = 50) -> bytes:
+    """Keep only the top-N minutiae by quality column.
+
+    .xyt format is one minutia per line: ``x y theta quality``. Bozorth3 works
+    far better on a smaller set of high-quality minutiae than on every blob
+    mindtct could find. NIST's bozorth3 docs recommend culling to ~50 for
+    small captures."""
+    lines = data.decode("ascii", "ignore").splitlines()
+    parsed = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        try:
+            quality = int(parts[3])
+        except ValueError:
+            continue
+        parsed.append((quality, line))
+    if not parsed:
+        return data
+    parsed.sort(key=lambda t: t[0], reverse=True)
+    kept_lines = [line for _q, line in parsed[:keep_top]]
+    return ("\n".join(kept_lines) + "\n").encode("ascii")
 
 
 # ── bozorth3: two .xyt files -> score ───────────────────────────────────

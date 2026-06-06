@@ -211,9 +211,14 @@ def enroll(images_bytes: List[bytes], config: dict = PIPELINE_CONFIG) -> dict:
             if not q.get("acceptable", False):
                 continue
 
-            gray = preprocess_for_template(raw_bytes, config)
-            if isinstance(gray, dict):
-                continue
+            # NBIS path uses raw grayscale; embedding/minutiae paths use
+            # Gabor-enhanced preprocessing.
+            if config.get("USE_NBIS_MATCHER", False):
+                gray = raw_img
+            else:
+                gray = preprocess_for_template(raw_bytes, config)
+                if isinstance(gray, dict):
+                    continue
             gray_scans.append((gray, q))
 
         timings["step_preprocess"] = time.perf_counter() - t0

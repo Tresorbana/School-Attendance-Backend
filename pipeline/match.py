@@ -89,16 +89,20 @@ def identify(
                 "quality": quality,
             }
 
-        # Use CLAHE-only grayscale — FingerprintTemplate does its own
-        # segmentation/ridge extraction internally; feeding it a skeleton
-        # destroys gradient info and collapses real-match scores to ~10.
-        probe_img = preprocess_for_template(image_bytes, config)
-        if isinstance(probe_img, dict):
-            return {
-                "matched": False, "person_id": None, "confidence_score": 0.0,
-                "flag": "poor_scan_quality", "all_scores": {},
-                "error": probe_img.get("error"),
-            }
+        # NBIS / DINOv2 want a real fingerprint image, not the heavy
+        # Gabor-enhanced output of preprocess_for_template. NBIS's mindtct
+        # in particular returns zero minutiae on Gabor-stylized inputs.
+        if config.get("USE_NBIS_MATCHER", False):
+            # mindtct gets raw grayscale; nbis.py applies its own CLAHE.
+            probe_img = raw_img
+        else:
+            probe_img = preprocess_for_template(image_bytes, config)
+            if isinstance(probe_img, dict):
+                return {
+                    "matched": False, "person_id": None, "confidence_score": 0.0,
+                    "flag": "poor_scan_quality", "all_scores": {},
+                    "error": probe_img.get("error"),
+                }
 
         timings["step_preprocess"] = time.perf_counter() - t0
 
@@ -125,10 +129,11 @@ def identify(
             probe_template = _Template(probe_img)
             probe_matcher = _Matcher(probe_template)
         except Exception as exc:
+            print(f"[identify] FAILED to build probe template: {exc}")
             return {
                 "matched": False, "person_id": None, "confidence_score": 0.0,
                 "flag": "no_match", "all_scores": {},
-                "error": f"SourceAFIS probe template failed: {exc}",
+                "error": f"probe template failed: {exc}",
             }
 
         min_minutiae = int(config.get("QUALITY_MIN_MINUTIAE_PROBE", 14))
@@ -199,19 +204,55 @@ def identify(
         gap_ratio = float(config.get("MATCH_GAP_MIN_RATIO", 1.35))
         threshold_warn = float(config.get("MATCH_THRESHOLD_WARN", 28))
 
-        # Gap gate: best must be clearly separated from runner-up
         diff = best_score - second_score
         ratio = best_score / second_score if second_score > 1e-6 else float("inf")
         gap_ok = diff >= gap_abs and ratio >= gap_ratio
 
-        if best_score >= effective_confirm and gap_ok:
-            flag = "confirmed"
-        elif best_score >= threshold_warn:
-            # Score is plausible but failed gap or quality gate â†’ not recorded
-            flag = "low_confidence"
-            best_person = None
+        # ── Decision logic ─────────────────────────────────────────────────
+        # ADAPTIVE mode: pass on any of three tiers — absolute strong,
+        # clear winner, or dominant leader. Catches genuine matches with
+        # modest absolute scores when they clearly beat the runner-up.
+        # Impostor scores cluster near each other so gap rules block them.
+        if config.get("USE_ADAPTIVE_THRESHOLD", True):
+            t1_strong  = float(config.get("MATCH_TIER1_STRONG", 50))
+            t2_min     = float(config.get("MATCH_TIER2_MIN", 15))
+            t2_ratio   = float(config.get("MATCH_TIER2_RATIO", 2.0))
+            t2_gap     = float(config.get("MATCH_TIER2_GAP", 10))
+            t3_min     = float(config.get("MATCH_TIER3_MIN", 12))
+            t3_ratio   = float(config.get("MATCH_TIER3_RATIO", 3.0))
+
+            tier_hit = None
+            if best_score >= t1_strong:
+                tier_hit = "T1"
+            elif (best_score >= t2_min
+                  and ratio >= t2_ratio
+                  and diff >= t2_gap):
+                tier_hit = "T2"
+            elif (best_score >= t3_min
+                  and (second_score < 1e-6 or ratio >= t3_ratio)):
+                tier_hit = "T3"
+
+            if tier_hit is not None:
+                flag = "confirmed"
+            elif best_score >= threshold_warn:
+                flag = "low_confidence"
+                best_person = None
+            else:
+                flag = "no_match"
+                best_person = None
         else:
-            flag = "no_match"
+            # STRICT legacy mode (used when USE_ADAPTIVE_THRESHOLD=False).
+            if best_score >= effective_confirm and gap_ok:
+                flag = "confirmed"
+                tier_hit = "STRICT"
+            elif best_score >= threshold_warn:
+                flag = "low_confidence"
+                best_person = None
+                tier_hit = None
+            else:
+                flag = "no_match"
+                best_person = None
+                tier_hit = None
             best_person = None
 
         timings["total"] = time.perf_counter() - t_start
@@ -225,6 +266,7 @@ def identify(
             f"enrolled={len(enrolled)} clarity={clarity:.2f} "
             f"best={best_score:.1f} 2nd={second_score:.1f} gap={diff:.1f}/{ratio:.2f}x "
             f"effective_thresh={effective_confirm:.1f} flag={flag}"
+            f"{(' tier=' + tier_hit) if tier_hit else ''}"
         )
 
         result = {

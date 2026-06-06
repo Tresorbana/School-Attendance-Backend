@@ -51,26 +51,43 @@ PIPELINE_CONFIG = {
     # Legacy minutiae backend (used only when above are False/unavailable)
     "USE_SOURCEAFIS": True,
 
-    # Calibrated for bozorth3 score distribution (NIST recommendation):
-    #   Genuine same-finger:    40–200+
-    #   Different fingers:      0–15
-    # Threshold 40 is NIST's documented FMR ≤ 0.01% point. 50 is safer.
-    "MATCH_THRESHOLD_CONFIRM": 40,
-    "MATCH_THRESHOLD_WARN": 25,
-    "MATCH_GAP_MIN_ABS": 10.0,
+    # Adaptive 3-tier decision (default ON). Probe is confirmed when ANY
+    # of the tiers fires. Designed to confirm honest users in 1 try while
+    # still rejecting impostors (whose scores cluster ~3–10 with no clear
+    # winner). To revert to strict-70 mode set USE_ADAPTIVE_THRESHOLD=False
+    # — then the legacy MATCH_THRESHOLD_CONFIRM gate below is used.
+    "USE_ADAPTIVE_THRESHOLD": True,
+
+    # ── Tier 1 — Absolute strong (single-finger high score) ─────────────
+    "MATCH_TIER1_STRONG": 50,
+
+    # ── Tier 2 — Clear winner over runner-up ────────────────────────────
+    "MATCH_TIER2_MIN":   15,   # absolute floor
+    "MATCH_TIER2_RATIO": 2.0,  # best / 2nd
+    "MATCH_TIER2_GAP":   10,   # best − 2nd
+
+    # ── Tier 3 — Dominant leader (modest absolute but no real competition) ─
+    "MATCH_TIER3_MIN":   12,
+    "MATCH_TIER3_RATIO": 3.0,
+
+    # Legacy strict-mode gate (only used when USE_ADAPTIVE_THRESHOLD=False)
+    "MATCH_THRESHOLD_CONFIRM": 70,
+    "MATCH_THRESHOLD_WARN": 10,
+    "MATCH_GAP_MIN_ABS": 15.0,
     "MATCH_GAP_MIN_RATIO": 1.5,
     "MATCH_QUALITY_SCALE": True,
     "MATCH_QUALITY_FLOOR": 0.35,
     "MATCH_QUALITY_PENALTY": 5.0,
 
     # ── Multi-template (per-person raw templates) ───────────────────────
-    # Probe is checked against raw templates when composite is in the
-    # ambiguous range. Raw templates are capped at MAX_RAW_TEMPLATES per
-    # person at enrollment time so identify stays under ~2s.
+    # Probe is checked against raw templates whenever composite scores
+    # above MULTI_TEMPLATE_MIN_COMPOSITE (kept low so we always exploit
+    # the per-scan templates for ambiguous cases). MAX_RAW_TEMPLATES
+    # bounds identify time.
     "USE_MULTI_TEMPLATE": True,
     "MULTI_TEMPLATE_STRATEGY": "max",
-    "MULTI_TEMPLATE_MIN_COMPOSITE": 15,
-    "MAX_RAW_TEMPLATES": 4,              # cap to keep match time bounded
+    "MULTI_TEMPLATE_MIN_COMPOSITE": 3,
+    "MAX_RAW_TEMPLATES": 4,
 
     # ── Speed / parallelism ─────────────────────────────────────────────
     "MATCH_PARALLEL": True,              # parallel BFS across persons

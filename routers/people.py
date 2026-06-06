@@ -230,5 +230,9 @@ def _enroll_fingerprint(person_id: int, images_b64: List[str]) -> None:
             )
         finally:
             db.close()
+        # Force the matcher's in-memory cache to reload the next time
+        # identify() runs — without this, fresh probes still see enrolled=0.
+        from services.template_cache import template_cache
+        template_cache.invalidate()
     except Exception as exc:
         logger.exception("Background enroll exception person_id=%s: %s", person_id, exc)
