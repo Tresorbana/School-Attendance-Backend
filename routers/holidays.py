@@ -1,38 +1,41 @@
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_structured_db
 from models.holiday import Holiday
-from services.auth import require_admin_key
+from services.auth import require_admin_key, require_any_admin, require_super_admin
 
 router = APIRouter(prefix="/holidays", tags=["holidays"])
 
 
 class CreateHolidayDto(BaseModel):
-    name: str
-    date: str
+    name: str = Field(..., min_length=1, max_length=200)
+    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     confirmed: bool = False
 
 
 class UpdateHolidayDto(BaseModel):
-    name: Optional[str] = None
-    date: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=200)
+    date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     confirmed: Optional[bool] = None
 
 
 @router.get("")
 def list_all(
     year: Optional[int] = None,
+    user: dict = Depends(require_any_admin),
     db: Session = Depends(get_structured_db),
 ):
     if year is not None:
+        if year < 2000 or year > 2100:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid year")
         q = (
             db.query(Holiday)
-            .filter(Holiday.date.like(f"{year}-%"))
+            .filter(Holiday.date >= f"{year}-01-01", Holiday.date <= f"{year}-12-31")
             .order_by(Holiday.date.asc())
         )
     else:
@@ -40,7 +43,7 @@ def list_all(
     return [h.to_public() for h in q.all()]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_super_admin)])
 def create(dto: CreateHolidayDto, db: Session = Depends(get_structured_db)):
     h = Holiday(name=dto.name.strip(), date=dto.date, confirmed=dto.confirmed)
     db.add(h)
@@ -49,7 +52,7 @@ def create(dto: CreateHolidayDto, db: Session = Depends(get_structured_db)):
     return h.to_public()
 
 
-@router.patch("/{holiday_id}")
+@router.patch("/{holiday_id}", dependencies=[Depends(require_super_admin)])
 def update(holiday_id: int, dto: UpdateHolidayDto, db: Session = Depends(get_structured_db)):
     h = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not h:
@@ -65,7 +68,7 @@ def update(holiday_id: int, dto: UpdateHolidayDto, db: Session = Depends(get_str
     return h.to_public()
 
 
-@router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_super_admin)])
 def remove(holiday_id: int, db: Session = Depends(get_structured_db)):
     h = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not h:
@@ -78,7 +81,6 @@ def remove(holiday_id: int, db: Session = Depends(get_structured_db)):
 
 
 def _compute_easter(year: int) -> date:
-    """Anonymous Gregorian algorithm."""
     a = year % 19
     b = year // 100
     c = year % 100
@@ -98,14 +100,14 @@ def _compute_easter(year: int) -> date:
 
 def _first_friday_of_august(year: int) -> str:
     d = date(year, 8, 1)
-    while d.weekday() != 4:  # Mon=0 .. Fri=4
+    while d.weekday() != 4:
         d += timedelta(days=1)
     return d.isoformat()
 
 
 def _observed_date(year: int, month: int, day: int) -> str:
     d = date(year, month, day)
-    wd = d.weekday()  # Mon=0 .. Sun=6
+    wd = d.weekday()
     if wd == 5:
         d += timedelta(days=2)
     elif wd == 6:
@@ -127,7 +129,13 @@ def _islamic_dates(year: int) -> dict:
 
 @router.post("/seed/{year}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_key)])
 def seed_defaults(year: int, db: Session = Depends(get_structured_db)):
-    existing = db.query(Holiday).filter(Holiday.date.like(f"{year}-%")).count()
+    if year < 2000 or year > 2100:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid year")
+    existing = (
+        db.query(Holiday)
+        .filter(Holiday.date >= f"{year}-01-01", Holiday.date <= f"{year}-12-31")
+        .count()
+    )
     if existing > 0:
         return
 

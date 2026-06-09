@@ -1,4 +1,7 @@
 """Authentication: password check against env + stations table, JWT issuance/verification."""
+import hashlib
+import hmac
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -13,26 +16,47 @@ from models.station import Station
 JWT_ALGO = "HS256"
 
 
+def hash_password(plain: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with a random 16-byte salt."""
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", plain.encode("utf-8"), salt, 260_000)
+    return f"pbkdf2$260000${salt.hex()}${dk.hex()}"
+
+
+def verify_password(plain: str, stored: str) -> bool:
+    """Verify a password against a stored hash (or legacy plain text)."""
+    if not stored:
+        return False
+    if not stored.startswith("pbkdf2$"):
+        # Legacy plain-text — constant-time comparison to prevent timing attacks
+        return hmac.compare_digest(plain, stored)
+    parts = stored.split("$")
+    if len(parts) != 4:
+        return False
+    _, iters_str, salt_hex, dk_hex = parts
+    try:
+        salt = bytes.fromhex(salt_hex)
+        dk = bytes.fromhex(dk_hex)
+        new_dk = hashlib.pbkdf2_hmac("sha256", plain.encode("utf-8"), salt, int(iters_str))
+        return hmac.compare_digest(new_dk, dk)
+    except Exception:
+        return False
+
+
 def login(username: str, password: str, db: Session) -> dict:
-    """
-    Validate credentials and return an AuthUser dict matching the NestJS shape.
-    Raises HTTPException 401 on failure.
-    """
+    """Validate credentials and return an AuthUser dict. Raises 401 on failure."""
     u_lower = username.strip().lower()
 
-    # 1. Super-admin (from env)
-    if (
-        settings.ADMIN_USERNAME
-        and u_lower == settings.ADMIN_USERNAME.strip().lower()
-        and password == settings.ADMIN_PASSWORD
-    ):
-        return {
-            "username": settings.ADMIN_USERNAME,
-            "full_name": settings.ADMIN_FULL_NAME,
-            "role": "super-admin",
-            "station": None,
-            "stationId": None,
-        }
+    # 1. Super-admin (from env) — constant-time compare for password
+    if settings.ADMIN_USERNAME and u_lower == settings.ADMIN_USERNAME.strip().lower():
+        if hmac.compare_digest(password, settings.ADMIN_PASSWORD):
+            return {
+                "username": settings.ADMIN_USERNAME,
+                "full_name": settings.ADMIN_FULL_NAME,
+                "role": "super-admin",
+                "station": None,
+                "stationId": None,
+            }
 
     # 2. Station-admin
     station: Optional[Station] = (
@@ -40,7 +64,7 @@ def login(username: str, password: str, db: Session) -> dict:
         .filter(Station.admin_username == username.strip(), Station.active.is_(True))
         .first()
     )
-    if station and station.admin_password == password:
+    if station and verify_password(password, station.admin_password or ""):
         return {
             "username": station.admin_username,
             "full_name": station.admin_full_name or station.name,
@@ -69,6 +93,8 @@ def create_token(user: dict) -> str:
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired — please sign in again.")
     except jwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {exc}")
 
@@ -79,18 +105,25 @@ def decode_token(token: str) -> dict:
 def current_user(authorization: str = Header(default="")) -> dict:
     """Require a valid Bearer JWT; return the decoded payload."""
     if not authorization.lower().startswith("bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing Bearer token")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     token = authorization[7:].strip()
     return decode_token(token)
 
 
 def require_super_admin(user: dict = Depends(current_user)) -> dict:
     if user.get("role") != "super-admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Super-admin required")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Super-admin access required")
+    return user
+
+
+def require_any_admin(user: dict = Depends(current_user)) -> dict:
+    """Allow both super-admin and station-admin."""
+    if user.get("role") not in ("super-admin", "station-admin"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
     return user
 
 
 def require_admin_key(x_admin_key: str = Header(default="", alias="X-Admin-Key")) -> None:
-    """Match the NestJS X-Admin-Key guard used on seed endpoints."""
+    """Legacy X-Admin-Key guard used on seed endpoints."""
     if not x_admin_key or x_admin_key != settings.ADMIN_PASSWORD:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing or invalid X-Admin-Key")

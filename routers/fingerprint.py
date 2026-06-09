@@ -26,6 +26,7 @@ from pipeline.enroll import enroll as pipeline_enroll
 from pipeline.pipeline_config import PIPELINE_CONFIG
 from pipeline.quality import check_quality
 from pipeline_db import delete_template, save_template
+from services.auth import require_super_admin
 from services.template_cache import template_cache
 
 router = APIRouter(tags=["fingerprint"])
@@ -163,12 +164,12 @@ def delete_person_template(person_id: str, db: Session = Depends(get_templates_d
     template_cache.invalidate()
 
 
-@router.get("/pipeline-config")
+@router.get("/pipeline-config", dependencies=[Depends(require_super_admin)])
 def get_pipeline_config():
     return _runtime_config
 
 
-@router.patch("/pipeline-config")
+@router.patch("/pipeline-config", dependencies=[Depends(require_super_admin)])
 def patch_pipeline_config(patch: dict = Body(...)):
     _runtime_config.update(patch)
     return _runtime_config

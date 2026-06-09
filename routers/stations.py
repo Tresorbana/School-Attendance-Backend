@@ -1,41 +1,47 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_structured_db
 from models.station import Station
-from services.auth import require_admin_key
+from services.auth import hash_password, require_admin_key, require_any_admin, require_super_admin
 
 router = APIRouter(prefix="/stations", tags=["stations"])
 
 
 class CreateStationDto(BaseModel):
-    name: str
-    code: Optional[str] = None
-    address: Optional[str] = None
-    adminUsername: Optional[str] = None
-    adminPassword: Optional[str] = None
-    adminFullName: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=150)
+    code: Optional[str] = Field(default=None, max_length=30)
+    address: Optional[str] = Field(default=None, max_length=300)
+    adminUsername: Optional[str] = Field(default=None, max_length=100)
+    adminPassword: Optional[str] = Field(default=None, max_length=200)
+    adminFullName: Optional[str] = Field(default=None, max_length=150)
 
 
 class UpdateStationDto(BaseModel):
-    name: Optional[str] = None
-    code: Optional[str] = None
-    address: Optional[str] = None
-    adminUsername: Optional[str] = None
-    adminPassword: Optional[str] = None
-    adminFullName: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=150)
+    code: Optional[str] = Field(default=None, max_length=30)
+    address: Optional[str] = Field(default=None, max_length=300)
+    adminUsername: Optional[str] = Field(default=None, max_length=100)
+    adminPassword: Optional[str] = Field(default=None, max_length=200)
+    adminFullName: Optional[str] = Field(default=None, max_length=150)
 
 
 @router.get("")
-def list_stations(db: Session = Depends(get_structured_db)):
+def list_stations(
+    user: dict = Depends(require_any_admin),
+    db: Session = Depends(get_structured_db),
+):
     return [s.to_public() for s in db.query(Station).order_by(Station.name.asc()).all()]
 
 
 @router.get("/names")
-def list_active_names(db: Session = Depends(get_structured_db)):
+def list_active_names(
+    user: dict = Depends(require_any_admin),
+    db: Session = Depends(get_structured_db),
+):
     rows = (
         db.query(Station.name)
         .filter(Station.active.is_(True))
@@ -46,14 +52,18 @@ def list_active_names(db: Session = Depends(get_structured_db)):
 
 
 @router.get("/{station_id}")
-def get_one(station_id: int, db: Session = Depends(get_structured_db)):
+def get_one(
+    station_id: int,
+    user: dict = Depends(require_any_admin),
+    db: Session = Depends(get_structured_db),
+):
     s = db.query(Station).filter(Station.id == station_id).first()
     if not s:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Station {station_id} not found")
     return s.to_public()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_super_admin)])
 def create(dto: CreateStationDto, db: Session = Depends(get_structured_db)):
     existing = db.query(Station).filter(Station.name == dto.name.strip()).first()
     if existing:
@@ -63,7 +73,7 @@ def create(dto: CreateStationDto, db: Session = Depends(get_structured_db)):
         code=(dto.code.strip() if dto.code else None),
         address=(dto.address.strip() if dto.address else None),
         admin_username=(dto.adminUsername.strip() if dto.adminUsername else None),
-        admin_password=dto.adminPassword or None,
+        admin_password=hash_password(dto.adminPassword) if dto.adminPassword else None,
         admin_full_name=(dto.adminFullName.strip() if dto.adminFullName else None),
     )
     db.add(s)
@@ -72,7 +82,7 @@ def create(dto: CreateStationDto, db: Session = Depends(get_structured_db)):
     return s.to_public()
 
 
-@router.patch("/{station_id}")
+@router.patch("/{station_id}", dependencies=[Depends(require_super_admin)])
 def update(station_id: int, dto: UpdateStationDto, db: Session = Depends(get_structured_db)):
     s = db.query(Station).filter(Station.id == station_id).first()
     if not s:
@@ -86,7 +96,7 @@ def update(station_id: int, dto: UpdateStationDto, db: Session = Depends(get_str
     if dto.adminUsername is not None:
         s.admin_username = dto.adminUsername.strip() or None
     if dto.adminPassword is not None:
-        s.admin_password = dto.adminPassword or None
+        s.admin_password = hash_password(dto.adminPassword) if dto.adminPassword.strip() else None
     if dto.adminFullName is not None:
         s.admin_full_name = dto.adminFullName.strip() or None
     db.commit()
@@ -94,7 +104,7 @@ def update(station_id: int, dto: UpdateStationDto, db: Session = Depends(get_str
     return s.to_public()
 
 
-@router.delete("/{station_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{station_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_super_admin)])
 def remove(station_id: int, db: Session = Depends(get_structured_db)):
     s = db.query(Station).filter(Station.id == station_id).first()
     if not s:
@@ -130,12 +140,13 @@ def seed_demo(db: Session = Depends(get_structured_db)):
             skipped.append(b["name"])
             continue
         code_lower = b["code"].lower()
+        plain_pwd = f"Indongozi@{b['code'].upper()}"
         s = Station(
             name=b["name"],
             code=b["code"],
             address=b["address"],
             admin_username=f"{code_lower}_admin",
-            admin_password=f"Indongozi@{b['code'].upper()}",
+            admin_password=hash_password(plain_pwd),
             admin_full_name=f"{b['name']} Admin",
         )
         db.add(s)
