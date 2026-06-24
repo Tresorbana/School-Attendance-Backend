@@ -213,10 +213,19 @@ def remove_person(
     person = db.query(Person).filter(Person.id == person_id).first()
     if not person:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found")
+
+    # Resolve station_id before deleting the person record
+    station_id: Optional[int] = None
+    if person.station:
+        from models.station import Station
+        st = db.query(Station).filter(Station.name == person.station).first()
+        if st:
+            station_id = st.id
+
     db.delete(person)
     db.commit()
     from pipeline_db import delete_template
-    delete_template(templates_db, str(person_id))
+    delete_template(templates_db, str(person_id), station_id)
 
 
 @router.post("/enroll/check-duplicate")
@@ -270,13 +279,21 @@ def enroll(
     elif dto.fingerprintTemplate and dto.fingerprintTemplate != "pending":
         images = [dto.fingerprintTemplate]
 
+    # Resolve the station's numeric ID for fingerprint template tagging
+    station_id: Optional[int] = None
+    if effective_station:
+        from models.station import Station
+        st = db.query(Station).filter(Station.name == effective_station).first()
+        if st:
+            station_id = st.id
+
     if images:
-        background.add_task(_enroll_fingerprint, person.id, images)
+        background.add_task(_enroll_fingerprint, person.id, images, station_id)
 
     return {"id": person.id, "name": person.name}
 
 
-def _enroll_fingerprint(person_id: int, images_b64: List[str]) -> None:
+def _enroll_fingerprint(person_id: int, images_b64: List[str], station_id: Optional[int] = None) -> None:
     import base64
     from database import TemplatesSession
     from pipeline.enroll import enroll as run_enroll
@@ -291,8 +308,8 @@ def _enroll_fingerprint(person_id: int, images_b64: List[str]) -> None:
 
         db = TemplatesSession()
         try:
-            save_template(db, str(person_id), result["template_bytes"], result.get("raw_templates", []))
-            logger.info("Enrolled person_id=%s steps=%s", person_id, ",".join(result.get("steps_applied", [])))
+            save_template(db, str(person_id), result["template_bytes"], result.get("raw_templates", []), station_id)
+            logger.info("Enrolled person_id=%s station_id=%s steps=%s", person_id, station_id, ",".join(result.get("steps_applied", [])))
         finally:
             db.close()
         from services.template_cache import template_cache

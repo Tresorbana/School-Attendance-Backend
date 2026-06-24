@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import threading
 from base64 import b64decode
 from pathlib import Path
@@ -23,11 +24,15 @@ logger = logging.getLogger("scanner")
 SERVICE_PIPE = r"\\.\pipe\AttendAIFingerprint"
 SCHEDULED_TASK = "AttendAIFingerprintBridge"
 
-# Bridge exe lives next to the backend (we restored it from attendance-api
-# when NestJS was deleted). Keep one canonical path.
-_HERE = Path(__file__).resolve().parent
+# In a PyInstaller one-folder bundle sys.executable is the .exe itself;
+# __file__ resolves to an internal extraction temp dir and is unreliable.
+_HERE = (
+    Path(sys.executable).parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent
+)
 _BRIDGE_EXE_CANDIDATES = [
-    _HERE.parent / "bridge" / "FingerprintBridge.exe",
+    _HERE / "bridge" / "FingerprintBridge.exe",
 ]
 
 

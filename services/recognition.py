@@ -1,6 +1,5 @@
 """
-Recognition coordinator — collapses what NestJS's RecognitionService used to do:
-  run /identify → check cooldown → resolve next action → record attendance
+Recognition coordinator: run identify → check cooldown → resolve action → record attendance.
 """
 import logging
 from datetime import datetime
@@ -9,7 +8,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from config import settings
-from database import StructuredSession, TemplatesSession
+from database import StructuredSession
 from models.person import Person
 from pipeline.match import identify as pipeline_identify
 from services import attendance as att_svc
@@ -21,12 +20,16 @@ logger = logging.getLogger("recognition")
 def identify_and_record(
     image_bytes: bytes,
     mode: str = "auto",
+    station_id: Optional[int] = None,
 ) -> dict:
     """
-    Run the SourceAFIS pipeline on the image, find the best match, then record
-    attendance with the appropriate type. Returns a dict the frontend can render.
+    Run pipeline on image, find best match within the given station, then record
+    attendance. station_id=None searches ALL templates (super-admin use only).
     """
-    enrolled = template_cache.get()
+    # Resolve effective station — prefer explicit arg, fall back to configured default
+    effective_station_id = station_id if station_id is not None else settings.STATION_ID
+
+    enrolled = template_cache.get(effective_station_id)
     py = pipeline_identify(image_bytes, enrolled)
 
     if py.get("flag") == "low_confidence":
@@ -44,7 +47,7 @@ def identify_and_record(
     except (TypeError, ValueError):
         return {"matched": False, "error": "invalid_person_id"}
 
-    score = py.get("confidence_score", 0) / 100.0  # store as 0–1
+    score = py.get("confidence_score", 0) / 100.0
 
     db: Session = StructuredSession()
     try:
@@ -53,13 +56,11 @@ def identify_and_record(
             logger.warning("identify matched id=%s but person not in DB", person_id)
             return {"matched": False, "pipeline": "python"}
 
-        # Cooldown — same record as last if within window
         last = att_svc.get_last_for_person(db, person.id)
         if last:
             elapsed_ms = (
                 (datetime.utcnow() - last.timestamp).total_seconds() * 1000
-                if last.timestamp
-                else 9_999_999
+                if last.timestamp else 9_999_999
             )
             if elapsed_ms < settings.CHECKIN_COOLDOWN_MINUTES * 60_000:
                 return {
@@ -73,7 +74,6 @@ def identify_and_record(
                     "mode": mode,
                 }
 
-        # Resolve action via stage machine
         stage = att_svc.get_current_stage(db, person.id)
         resolved = att_svc.resolve_action(stage, mode)
         if "error" in resolved:

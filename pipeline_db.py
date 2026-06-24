@@ -1,12 +1,7 @@
-"""
-Repository helpers for fingerprint templates (TemplatesBase).
-
-Kept separate from models/ to mirror the structure of the old fingerprint-pipeline
-and minimize churn when the matching cache reaches into it.
-"""
+"""Repository helpers for fingerprint templates (TemplatesBase)."""
 import pickle
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -18,16 +13,19 @@ def save_template(
     person_id: str,
     template_bytes: bytes,
     raw_templates: List[bytes],
+    station_id: Optional[int] = None,
 ) -> None:
     raw_data = pickle.dumps(raw_templates)
-    existing = db.get(FingerprintRecord, person_id)
+    existing = db.query(FingerprintRecord).filter(FingerprintRecord.person_id == person_id).first()
     if existing:
         existing.template_bytes = template_bytes
         existing.raw_templates_data = raw_data
+        existing.station_id = station_id
         existing.updated_at = datetime.utcnow()
     else:
         db.add(FingerprintRecord(
             person_id=person_id,
+            station_id=station_id,
             template_bytes=template_bytes,
             raw_templates_data=raw_data,
             updated_at=datetime.utcnow(),
@@ -35,8 +33,11 @@ def save_template(
     db.commit()
 
 
-def delete_template(db: Session, person_id: str) -> bool:
-    rec = db.get(FingerprintRecord, person_id)
+def delete_template(db: Session, person_id: str, station_id: Optional[int] = None) -> bool:
+    q = db.query(FingerprintRecord).filter(FingerprintRecord.person_id == person_id)
+    if station_id is not None:
+        q = q.filter(FingerprintRecord.station_id == station_id)
+    rec = q.first()
     if rec is None:
         return False
     db.delete(rec)
@@ -44,11 +45,15 @@ def delete_template(db: Session, person_id: str) -> bool:
     return True
 
 
-def load_all_enrolled(db: Session) -> list:
-    """Return [(person_id, composite_template, [raw_templates])] for all rows."""
-    from pipeline.minutiae import FingerprintTemplate  # noqa: F401  registered
+def load_all_enrolled(db: Session, station_id: Optional[int] = None) -> list:
+    """Return [(person_id, composite_template, [raw_templates])] filtered by station."""
+    from pipeline.minutiae import FingerprintTemplate  # noqa: F401
 
-    records = db.query(FingerprintRecord).all()
+    q = db.query(FingerprintRecord)
+    if station_id is not None:
+        q = q.filter(FingerprintRecord.station_id == station_id)
+    records = q.all()
+
     result = []
     for rec in records:
         if rec.template_bytes is None:

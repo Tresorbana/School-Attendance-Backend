@@ -47,9 +47,16 @@ def login(username: str, password: str, db: Session) -> dict:
     """Validate credentials and return an AuthUser dict. Raises 401 on failure."""
     u_lower = username.strip().lower()
 
-    # 1. Super-admin (from env) — constant-time compare for password
+    # 1. Super-admin — supports both hashed (pbkdf2$...) and legacy plain-text passwords.
+    #    On the first successful login with a plain-text password the hash is written
+    #    back to .env automatically so the password is never left in the clear.
     if settings.ADMIN_USERNAME and u_lower == settings.ADMIN_USERNAME.strip().lower():
-        if hmac.compare_digest(password, settings.ADMIN_PASSWORD):
+        if verify_password(password, settings.ADMIN_PASSWORD):
+            # Auto-upgrade plain-text to hash on first use
+            if not settings.ADMIN_PASSWORD.startswith("pbkdf2$"):
+                hashed = hash_password(password)
+                _update_env_key("ADMIN_PASSWORD", hashed)
+                settings.ADMIN_PASSWORD = hashed
             return {
                 "username": settings.ADMIN_USERNAME,
                 "full_name": settings.ADMIN_FULL_NAME,
@@ -125,5 +132,62 @@ def require_any_admin(user: dict = Depends(current_user)) -> dict:
 
 def require_admin_key(x_admin_key: str = Header(default="", alias="X-Admin-Key")) -> None:
     """Legacy X-Admin-Key guard used on seed endpoints."""
-    if not x_admin_key or x_admin_key != settings.ADMIN_PASSWORD:
+    if not x_admin_key or not verify_password(x_admin_key, settings.ADMIN_PASSWORD):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing or invalid X-Admin-Key")
+
+
+def change_password(current_password: str, new_password: str, user: dict, db: Session) -> None:
+    """
+    Change password for the currently logged-in admin.
+    - Super-admin: updates ADMIN_PASSWORD in the .env file + live settings.
+    - Station-admin: updates hashed password in the stations table.
+    Raises 400 on wrong current password.
+    """
+    role = user.get("role")
+
+    if role == "super-admin":
+        if not verify_password(current_password, settings.ADMIN_PASSWORD):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect.")
+        hashed = hash_password(new_password)
+        _update_env_key("ADMIN_PASSWORD", hashed)
+        settings.ADMIN_PASSWORD = hashed
+
+    elif role == "station-admin":
+        station = (
+            db.query(Station)
+            .filter(Station.admin_username == user.get("username"))
+            .first()
+        )
+        if not station:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Station admin account not found.")
+        if not verify_password(current_password, station.admin_password or ""):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect.")
+        station.admin_password = hash_password(new_password)
+        db.commit()
+
+    else:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only admins can change passwords.")
+
+
+def _update_env_key(key: str, value: str) -> None:
+    """Update a single KEY=value line in the .env file, or append it if missing."""
+    import re
+    from pathlib import Path
+
+    # Locate .env: next to this file's package root (backend/)
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        env_path = Path(".env")
+    if not env_path.exists():
+        return  # Nothing to update — settings are env-only (e.g. Docker)
+
+    content = env_path.read_text(encoding="utf-8")
+    pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
+    replacement = f"{key}={value}"
+
+    if pattern.search(content):
+        new_content = pattern.sub(replacement, content)
+    else:
+        new_content = content.rstrip("\n") + f"\n{replacement}\n"
+
+    env_path.write_text(new_content, encoding="utf-8")

@@ -1,8 +1,9 @@
-"""In-memory cache of pre-deserialized enrolled templates for fast /identify."""
+"""In-memory cache of pre-deserialized enrolled templates, keyed by station_id."""
 import os
 import tempfile
 import threading
 import time
+from typing import Optional
 
 from sqlalchemy.exc import DBAPIError, OperationalError
 
@@ -17,9 +18,8 @@ class TemplateCache:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._data: list | None = None
-        self._loaded_at: float = 0.0
-        self._file_version: int = -1
+        # Keyed by station_id (None = all templates for super-admin contexts)
+        self._buckets: dict[Optional[int], tuple[list, float, int]] = {}
 
     def _file_v(self) -> int:
         try:
@@ -28,40 +28,40 @@ class TemplateCache:
         except Exception:
             return 0
 
-    def get(self) -> list:
+    def get(self, station_id: Optional[int] = None) -> list:
         with self._lock:
             now = time.monotonic()
             file_v = self._file_v()
-            if (
-                self._data is None
-                or (now - self._loaded_at) > self.TTL
-                or file_v != self._file_version
-            ):
-                last_exc: Exception | None = None
-                for attempt in range(2):
-                    db = TemplatesSession()
-                    try:
-                        self._data = load_all_enrolled(db)
-                        last_exc = None
-                        break
-                    except (OperationalError, DBAPIError) as exc:
-                        last_exc = exc
-                        try:
-                            db.close()
-                        except Exception:
-                            pass
-                        templates_engine.dispose()
-                        continue
-                    finally:
-                        try:
-                            db.close()
-                        except Exception:
-                            pass
-                if last_exc is not None:
-                    raise last_exc
-                self._loaded_at = now
-                self._file_version = file_v
-            return self._data
+            bucket = self._buckets.get(station_id)
+
+            if bucket is None or (now - bucket[1]) > self.TTL or file_v != bucket[2]:
+                data = self._load(station_id)
+                self._buckets[station_id] = (data, now, file_v)
+                return data
+
+            return bucket[0]
+
+    def _load(self, station_id: Optional[int]) -> list:
+        last_exc: Exception | None = None
+        for _ in range(2):
+            db = TemplatesSession()
+            try:
+                return load_all_enrolled(db, station_id)
+            except (OperationalError, DBAPIError) as exc:
+                last_exc = exc
+                try:
+                    db.close()
+                except Exception:
+                    pass
+                templates_engine.dispose()
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        if last_exc is not None:
+            raise last_exc
+        return []
 
     def invalidate(self) -> None:
         with self._lock:
@@ -71,9 +71,7 @@ class TemplateCache:
                     fh.write(str(v))
             except Exception:
                 pass
-            self._data = None
-            self._loaded_at = 0.0
-            self._file_version = v
+            self._buckets.clear()
 
 
 template_cache = TemplateCache()

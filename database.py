@@ -100,6 +100,18 @@ def init_db() -> None:
     # Local SQLite — must succeed (it's a file on the same machine).
     TemplatesBase.metadata.create_all(templates_engine)
 
+    # Migrate existing SQLite: add station_id column if it doesn't exist yet.
+    try:
+        import sqlalchemy as _sa
+        with templates_engine.connect() as _conn:
+            _cols = [row[1] for row in _conn.execute(_sa.text("PRAGMA table_info(fingerprint_templates_py)"))]
+            if "station_id" not in _cols:
+                _conn.execute(_sa.text("ALTER TABLE fingerprint_templates_py ADD COLUMN station_id INTEGER"))
+                _conn.commit()
+                logger.info("Migrated fingerprint_templates_py: added station_id column")
+    except Exception as exc:
+        logger.warning("station_id migration check failed: %s", exc)
+
     # Remote Postgres — tolerate cold-start / transient failures.
     try:
         StructuredBase.metadata.create_all(structured_engine)

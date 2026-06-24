@@ -1,15 +1,26 @@
+"""Report endpoints. Export routes require a ?token= query param for browser downloads."""
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from database import get_structured_db
 from services import reports as svc
-from services.auth import require_any_admin
+from services.auth import decode_token, require_any_admin
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _require_download_token(token: Optional[str] = Query(default=None)) -> dict:
+    """
+    Validates a JWT passed as ?token= query param.
+    Used by export endpoints because browser <a href> downloads cannot send Bearer headers.
+    """
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+    return decode_token(token)
 
 
 @router.get("/daily")
@@ -43,8 +54,8 @@ def present_today(
     user: dict = Depends(require_any_admin),
     db: Session = Depends(get_structured_db),
 ):
-    effective_station = user.get("station") if user.get("role") == "station-admin" else station
-    return svc.present_today(db, effective_station)
+    effective = user.get("station") if user.get("role") == "station-admin" else station
+    return svc.present_today(db, effective)
 
 
 @router.get("/by-role")
@@ -61,27 +72,27 @@ def working_hours(
     user: dict = Depends(require_any_admin),
     db: Session = Depends(get_structured_db),
 ):
-    effective_station = user.get("station") if user.get("role") == "station-admin" else station
-    return svc.monthly_working_hours(db, year, month, effective_station, personId)
+    effective = user.get("station") if user.get("role") == "station-admin" else station
+    return svc.monthly_working_hours(db, year, month, effective, personId)
 
-
-# Export endpoints intentionally unauthenticated — browser file downloads cannot send Bearer tokens.
-# Restrict access at the network/firewall level in production.
 
 @router.get("/export")
 def export_csv(
     from_: Optional[str] = Query(default=None, alias="from"),
     to: Optional[str] = None,
+    station: Optional[str] = Query(default=None, max_length=150),
+    user: dict = Depends(_require_download_token),
     db: Session = Depends(get_structured_db),
 ):
-    csv = svc.export_csv(db, from_, to)
+    effective = user.get("station") if user.get("role") == "station-admin" else station
+    csv_data = svc.export_csv(db, from_, to, effective)
     today = datetime.utcnow().strftime("%Y-%m-%d")
     return Response(
-        content=csv,
+        content=csv_data,
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="sams-attendance-{today}.csv"',
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-store",
         },
     )
 
@@ -91,15 +102,17 @@ def export_monthly_csv(
     year: int,
     month: int,
     station: Optional[str] = Query(default=None, max_length=150),
+    user: dict = Depends(_require_download_token),
     db: Session = Depends(get_structured_db),
 ):
-    csv = svc.export_monthly_csv(db, year, month, station)
+    effective = user.get("station") if user.get("role") == "station-admin" else station
+    csv_data = svc.export_monthly_csv(db, year, month, effective)
     month_str = f"{year:04d}-{month:02d}"
     return Response(
-        content=csv,
+        content=csv_data,
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="sams-working-hours-{month_str}.csv"',
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-store",
         },
     )

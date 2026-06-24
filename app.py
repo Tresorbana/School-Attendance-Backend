@@ -1,15 +1,16 @@
 """
-SAMS / AttendAI backend — single Python service replacing NestJS + the
-old fingerprint-pipeline. Listens on port 8000 with /api/* prefix so the
-existing frontend works unchanged.
+SAMS / AttendAI backend — single Python service.
+Listens on port 8000 with /api/* prefix so the existing frontend works unchanged.
 """
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from database import init_db
@@ -23,9 +24,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app")
 
+_MAX_BODY_BYTES = 20 * 1024 * 1024  # 20 MB — enough for fingerprint images
+
 
 def _log_matcher_status() -> None:
-    """Print which matcher backend is active so we never wonder again."""
     from pipeline.pipeline_config import PIPELINE_CONFIG
     if PIPELINE_CONFIG.get("USE_NBIS_MATCHER"):
         from pipeline import nbis
@@ -33,12 +35,11 @@ def _log_matcher_status() -> None:
             logger.info("Matcher: NBIS (bozorth3) — biometric-grade")
         else:
             logger.error(
-                "Matcher: NBIS REQUESTED but binaries missing. "
-                "Place mindtct + bozorth3 in backend/bridge/nbis/ — "
-                "see backend/bridge/nbis/README.md. Falling back to embedding matcher."
+                "Matcher: NBIS requested but binaries missing. "
+                "Place mindtct + bozorth3 in backend/bridge/nbis/. Falling back."
             )
     elif PIPELINE_CONFIG.get("USE_EMBEDDING_MATCHER"):
-        logger.info("Matcher: DINOv2 embedding (no fine-tune)")
+        logger.info("Matcher: DINOv2 embedding")
     else:
         logger.info("Matcher: minutiae BFS (homebrew)")
 
@@ -47,6 +48,10 @@ def _log_matcher_status() -> None:
 async def lifespan(_app: FastAPI):
     init_db()
     _log_matcher_status()
+    if settings.STATION_ID:
+        logger.info("Station mode: STATION_ID=%d — recognition scoped to this station", settings.STATION_ID)
+    else:
+        logger.warning("No STATION_ID set — recognition searches ALL enrolled templates")
     loop = asyncio.get_running_loop()
     scanner_bridge.start(loop)
     pump = asyncio.create_task(fingerprint_ws._scanner_event_pump())
@@ -59,13 +64,49 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="SAMS — Indongozi SACCO Attendance API",
-    description="Staff Attendance Management System (Python backend)",
-    version="2.0.0",
+    title="SAMS — Attendance API",
+    description="Staff Attendance Management System",
+    version="2.1.0",
     lifespan=lifespan,
     docs_url="/api/docs" if settings.NODE_ENV != "production" else None,
     redoc_url=None,
 )
+
+# ── Request body size limit ────────────────────────────────────────────
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next) -> Response:
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > _MAX_BODY_BYTES:
+        return Response("Request body too large", status_code=413)
+    return await call_next(request)
+
+
+# ── Security headers ───────────────────────────────────────────────────
+@app.middleware("http")
+async def security_headers(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if settings.NODE_ENV == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self' wss:; "
+            "frame-ancestors 'none';"
+        )
+    return response
+
+
+# ── CORS ────────────────────────────────────────────────────────────────
+if settings.NODE_ENV == "production" and settings.CORS_ORIGIN == "*":
+    logger.warning("CORS_ORIGIN is '*' in production — set it to your frontend domain in .env")
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
@@ -74,9 +115,10 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
+    expose_headers=["Content-Disposition"],
 )
 
-# All HTTP routes live under /api/* to match the NestJS prefix the frontend uses.
+# ── Routes ──────────────────────────────────────────────────────────────
 api_prefix = "/api"
 app.include_router(auth.router, prefix=api_prefix)
 app.include_router(people.router, prefix=api_prefix)
@@ -85,16 +127,38 @@ app.include_router(holidays.router, prefix=api_prefix)
 app.include_router(attendance.router, prefix=api_prefix)
 app.include_router(reports.router, prefix=api_prefix)
 app.include_router(fingerprint.router, prefix=api_prefix)
-
-# WebSocket gateway lives at /ws/fingerprint (no /api prefix).
 app.include_router(fingerprint_ws.router)
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "scanner": scanner_bridge.status}
+    return {
+        "status": "ok",
+        "scanner": scanner_bridge.status,
+        "station_id": settings.STATION_ID,
+    }
+
+
+# ── Serve Next.js static files (installer / packaged exe mode) ────────────
+# Mounted LAST so /api/* routes always take priority.
+# STATIC_DIR is set in .env by the installer; dev mode leaves it unset.
+if settings.STATIC_DIR:
+    import os
+    if os.path.isdir(settings.STATIC_DIR):
+        app.mount("/", StaticFiles(directory=settings.STATIC_DIR, html=True), name="frontend")
+        logger.info("Serving frontend static files from: %s", settings.STATIC_DIR)
+    else:
+        logger.warning("STATIC_DIR set but not found: %s — frontend not served", settings.STATIC_DIR)
 
 
 if __name__ == "__main__":
+    import sys
+    # CLI helper used by the reset-admin-password.bat recovery script.
+    # Prints a PBKDF2 hash of the given password and exits immediately.
+    if len(sys.argv) == 3 and sys.argv[1] == "--hash-password":
+        from services.auth import hash_password
+        print(hash_password(sys.argv[2]), end="")
+        sys.exit(0)
+
     import uvicorn
     uvicorn.run("app:app", host=settings.HOST, port=settings.PORT, reload=False)
