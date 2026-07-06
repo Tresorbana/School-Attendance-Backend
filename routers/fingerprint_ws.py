@@ -1,22 +1,21 @@
 """
-WebSocket gateway — replaces NestJS FingerprintGateway.
+WebSocket gateway for fingerprint scanner events.
 
 Clients connect to /fingerprint?token=<jwt>.
-The hub is station-aware: each client is tagged with its stationId from the JWT,
-and attendance results are only broadcast to clients of the same station.
-Scanner events are processed with the STATION_ID from config (set per-deployment).
+All clients receive all events — single school context, no station filtering.
+Emergency checkout is signalled by mode='emergency-checkout' and triggers
+an admin notification broadcast.
 """
 import asyncio
 import base64
 import io
 import json
 import logging
-from typing import Dict, Optional, Set
+from typing import Set
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from PIL import Image
 
-from config import settings
 from scanner.bridge_client import scanner_bridge
 from services.auth import decode_token
 from services.recognition import identify_and_record
@@ -26,37 +25,35 @@ logger = logging.getLogger("ws.fingerprint")
 router = APIRouter()
 
 
-# ── Station-aware hub ──────────────────────────────────────────────────
+# ── Broadcast hub ──────────────────────────────────────────────────────
 
 class _Hub:
     def __init__(self) -> None:
-        self._clients: Dict[WebSocket, Optional[int]] = {}  # ws → station_id
+        self._clients: Set[WebSocket] = set()
         self.enrollment_clients: Set[WebSocket] = set()
         self.next_mode: str = "auto"
         self._lock = asyncio.Lock()
 
-    async def add(self, ws: WebSocket, station_id: Optional[int]) -> None:
+    async def add(self, ws: WebSocket) -> None:
         async with self._lock:
-            self._clients[ws] = station_id
+            self._clients.add(ws)
 
     async def remove(self, ws: WebSocket) -> None:
         async with self._lock:
-            self._clients.pop(ws, None)
+            self._clients.discard(ws)
             self.enrollment_clients.discard(ws)
 
-    async def broadcast(self, payload: dict, station_id: Optional[int] = None) -> None:
-        """Send to all clients of station_id (or all clients if station_id is None)."""
+    async def broadcast(self, payload: dict) -> None:
         msg = json.dumps(payload, default=str)
         async with self._lock:
             dead = []
-            for ws, sid in list(self._clients.items()):
-                if station_id is None or sid is None or sid == station_id:
-                    try:
-                        await ws.send_text(msg)
-                    except Exception:
-                        dead.append(ws)
+            for ws in list(self._clients):
+                try:
+                    await ws.send_text(msg)
+                except Exception:
+                    dead.append(ws)
             for ws in dead:
-                self._clients.pop(ws, None)
+                self._clients.discard(ws)
                 self.enrollment_clients.discard(ws)
 
     async def send_one(self, ws: WebSocket, payload: dict) -> None:
@@ -64,10 +61,6 @@ class _Hub:
             await ws.send_text(json.dumps(payload, default=str))
         except Exception:
             pass
-
-    @property
-    def clients(self) -> Dict[WebSocket, Optional[int]]:
-        return self._clients
 
 
 hub = _Hub()
@@ -98,7 +91,6 @@ async def _handle_scan_event(evt: dict) -> None:
     width = evt.get("width", 0)
     height = evt.get("height", 0)
     data = evt.get("data", b"")
-    png: bytes | None
 
     if width > 0 and height > 0:
         try:
@@ -118,14 +110,22 @@ async def _handle_scan_event(evt: dict) -> None:
         return
 
     png_b64 = base64.b64encode(png).decode("ascii")
-    station_id = settings.STATION_ID
-    await hub.broadcast({"type": "processing"}, station_id)
+    await hub.broadcast({"type": "processing"})
 
     try:
         mode = hub.next_mode
         hub.next_mode = "auto"
-        result = await asyncio.to_thread(identify_and_record, png, mode, station_id)
-        await hub.broadcast({"type": "attendance_result", **result}, station_id)
+        result = await asyncio.to_thread(identify_and_record, png, mode)
+        await hub.broadcast({"type": "attendance_result", **result})
+
+        # Broadcast emergency alert separately so admin UI can highlight it
+        if result.get("emergencyAlert"):
+            await hub.broadcast({
+                "type": "emergency_alert",
+                "personName": result.get("name"),
+                "personId": result.get("person_id"),
+                "message": f"{result.get('name')} triggered an emergency checkout.",
+            })
     except Exception as exc:
         logger.exception("Recognition failed: %s", exc)
 
@@ -157,23 +157,15 @@ async def _scanner_event_pump() -> None:
 
 @router.websocket("/fingerprint")
 async def fingerprint_ws(ws: WebSocket, token: str = Query(default="")) -> None:
-    # Resolve station identity from JWT (optional — unauthenticated connections
-    # fall back to the server-configured STATION_ID)
-    client_station_id: Optional[int] = settings.STATION_ID
     if token:
         try:
-            payload = decode_token(token)
-            jwt_station = payload.get("stationId")
-            if jwt_station is not None:
-                # Super-admins (stationId=None) see all, station-admins scoped to theirs
-                client_station_id = int(jwt_station) if jwt_station else None
+            decode_token(token)
         except Exception:
-            # Invalid token — close with 4001 (policy violation)
             await ws.close(code=4001)
             return
 
     await ws.accept()
-    await hub.add(ws, client_station_id)
+    await hub.add(ws)
     await hub.send_one(ws, {"type": "scanner_status", "status": scanner_bridge.status})
 
     try:
@@ -195,8 +187,15 @@ async def fingerprint_ws(ws: WebSocket, token: str = Query(default="")) -> None:
                 await hub.send_one(ws, {"type": "processing"})
                 mode = hub.next_mode
                 hub.next_mode = "auto"
-                result = await asyncio.to_thread(identify_and_record, png, mode, client_station_id)
+                result = await asyncio.to_thread(identify_and_record, png, mode)
                 await hub.send_one(ws, {"type": "attendance_result", **result})
+                if result.get("emergencyAlert"):
+                    await hub.broadcast({
+                        "type": "emergency_alert",
+                        "personName": result.get("name"),
+                        "personId": result.get("person_id"),
+                        "message": f"{result.get('name')} triggered an emergency checkout.",
+                    })
 
             elif event == "arm_enrollment":
                 hub.enrollment_clients.add(ws)
@@ -207,9 +206,10 @@ async def fingerprint_ws(ws: WebSocket, token: str = Query(default="")) -> None:
 
             elif event == "set_mode":
                 mode = data.get("mode")
-                if mode in {"auto", "break-start", "break-end", "check-out"}:
+                valid_modes = {"auto", "break-start", "break-end", "check-out", "emergency-checkout"}
+                if mode in valid_modes:
                     hub.next_mode = mode
-                    await hub.broadcast({"type": "mode_set", "mode": mode}, client_station_id)
+                    await hub.broadcast({"type": "mode_set", "mode": mode})
 
     except WebSocketDisconnect:
         pass

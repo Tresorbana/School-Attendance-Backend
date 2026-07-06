@@ -15,17 +15,21 @@ class _Bucket:
 
 
 class RateLimiter:
-    def __init__(self, max_requests: int, window_seconds: float) -> None:
+    def __init__(self, max_requests: int, window_seconds: float, trust_proxy: bool = False) -> None:
         self.max = max_requests
         self.window = window_seconds
+        self.trust_proxy = trust_proxy
         self._buckets: Dict[str, _Bucket] = {}
         self._lock = threading.Lock()
 
     def __call__(self, request: Request) -> None:
         ip = request.client.host if request.client else "unknown"
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            ip = forwarded.split(",")[0].strip()
+        # Only trust X-Forwarded-For when explicitly configured — prevents IP spoofing
+        # to bypass rate limits when the service is directly exposed without a trusted proxy.
+        if self.trust_proxy:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                ip = forwarded.split(",")[0].strip()
 
         now = time.monotonic()
         with self._lock:
@@ -42,5 +46,11 @@ class RateLimiter:
                 )
 
 
-login_limiter = RateLimiter(max_requests=5, window_seconds=60)
-api_limiter = RateLimiter(max_requests=30, window_seconds=60)
+def _make_limiters() -> tuple["RateLimiter", "RateLimiter"]:
+    from config import settings
+    t = settings.TRUST_PROXY
+    # 5 login attempts per 60 s per IP. Set TRUST_PROXY=true in .env when behind Nginx.
+    return RateLimiter(5, 60, t), RateLimiter(120, 60, t)
+
+
+login_limiter, api_limiter = _make_limiters()

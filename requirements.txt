@@ -3,17 +3,16 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 python-dotenv==1.0.1
 SQLAlchemy==2.0.35
-psycopg2-binary==2.9.9
 PyJWT==2.9.0
 
-# Imaging / fingerprint pipeline deps (same as fingerprint-pipeline)
+# Imaging / fingerprint pipeline deps
 numpy>=1.26
-opencv-python==4.10.0.84
+opencv-python>=4.8.0
 scipy>=1.13
-Pillow==10.4.0
-httpx==0.27.2
+scikit-image>=0.22.0
+Pillow>=10.0.0
+httpx>=0.27.0
 
-# Deep-learning fingerprint matcher (DINOv2 via transformers)
-# CPU-only torch keeps the install small (~200MB).
-torch==2.4.1
-transformers==4.45.2
+# PostgreSQL driver — only needed when DATABASE_URL is postgresql://...
+# On Linux VPS (production): pip install psycopg2-binary
+# On Windows with Python 3.13 dev: install via requirements-postgres.txt

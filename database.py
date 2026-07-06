@@ -95,12 +95,12 @@ def init_db() -> None:
     """
     import logging
     logger = logging.getLogger("database")
-    from models import person, station, attendance, holiday, fingerprint_template  # noqa: F401
+    from models import person, attendance, holiday, fingerprint_template, user, leave_request, notification  # noqa: F401
 
     # Local SQLite — must succeed (it's a file on the same machine).
     TemplatesBase.metadata.create_all(templates_engine)
 
-    # Migrate existing SQLite: add station_id column if it doesn't exist yet.
+    # Ensure fingerprint template table has station_id for backward compat with existing data.
     try:
         import sqlalchemy as _sa
         with templates_engine.connect() as _conn:
@@ -108,9 +108,8 @@ def init_db() -> None:
             if "station_id" not in _cols:
                 _conn.execute(_sa.text("ALTER TABLE fingerprint_templates_py ADD COLUMN station_id INTEGER"))
                 _conn.commit()
-                logger.info("Migrated fingerprint_templates_py: added station_id column")
-    except Exception as exc:
-        logger.warning("station_id migration check failed: %s", exc)
+    except Exception:
+        pass
 
     # Remote Postgres — tolerate cold-start / transient failures.
     try:

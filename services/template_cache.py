@@ -1,9 +1,8 @@
-"""In-memory cache of pre-deserialized enrolled templates, keyed by station_id."""
+"""In-memory cache of pre-deserialized enrolled templates (all school staff)."""
 import os
 import tempfile
 import threading
 import time
-from typing import Optional
 
 from sqlalchemy.exc import DBAPIError, OperationalError
 
@@ -18,35 +17,33 @@ class TemplateCache:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        # Keyed by station_id (None = all templates for super-admin contexts)
-        self._buckets: dict[Optional[int], tuple[list, float, int]] = {}
+        self._data: list = []
+        self._loaded_at: float = 0.0
+        self._file_v: int = 0
 
-    def _file_v(self) -> int:
+    def _read_file_v(self) -> int:
         try:
             with open(_VERSION_PATH) as fh:
                 return int(fh.read().strip())
         except Exception:
             return 0
 
-    def get(self, station_id: Optional[int] = None) -> list:
+    def get(self) -> list:
         with self._lock:
             now = time.monotonic()
-            file_v = self._file_v()
-            bucket = self._buckets.get(station_id)
+            file_v = self._read_file_v()
+            if (now - self._loaded_at) > self.TTL or file_v != self._file_v:
+                self._data = self._load()
+                self._loaded_at = now
+                self._file_v = file_v
+            return self._data
 
-            if bucket is None or (now - bucket[1]) > self.TTL or file_v != bucket[2]:
-                data = self._load(station_id)
-                self._buckets[station_id] = (data, now, file_v)
-                return data
-
-            return bucket[0]
-
-    def _load(self, station_id: Optional[int]) -> list:
+    def _load(self) -> list:
         last_exc: Exception | None = None
         for _ in range(2):
             db = TemplatesSession()
             try:
-                return load_all_enrolled(db, station_id)
+                return load_all_enrolled(db, station_id=None)
             except (OperationalError, DBAPIError) as exc:
                 last_exc = exc
                 try:
@@ -65,13 +62,14 @@ class TemplateCache:
 
     def invalidate(self) -> None:
         with self._lock:
-            v = self._file_v() + 1
+            v = self._read_file_v() + 1
             try:
                 with open(_VERSION_PATH, "w") as fh:
                     fh.write(str(v))
             except Exception:
                 pass
-            self._buckets.clear()
+            self._data = []
+            self._loaded_at = 0.0
 
 
 template_cache = TemplateCache()

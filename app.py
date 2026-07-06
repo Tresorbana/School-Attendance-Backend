@@ -1,6 +1,6 @@
 """
-SAMS / AttendAI backend — single Python service.
-Listens on port 8000 with /api/* prefix so the existing frontend works unchanged.
+AttendAI School Attendance backend.
+Listens on port 8000 with /api/* prefix.
 """
 import asyncio
 import logging
@@ -9,12 +9,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from database import init_db
-from routers import auth, attendance, fingerprint, fingerprint_ws, holidays, people, reports, stations
+from routers import (
+    auth, attendance, fingerprint, fingerprint_ws,
+    holidays, leave, notifications, people, reports, users,
+)
 from scanner.bridge_client import scanner_bridge
 
 logging.basicConfig(
@@ -48,14 +50,11 @@ def _log_matcher_status() -> None:
 async def lifespan(_app: FastAPI):
     init_db()
     _log_matcher_status()
-    if settings.STATION_ID:
-        logger.info("Station mode: STATION_ID=%d — recognition scoped to this station", settings.STATION_ID)
-    else:
-        logger.warning("No STATION_ID set — recognition searches ALL enrolled templates")
+    logger.info("School: %s", settings.SCHOOL_NAME)
     loop = asyncio.get_running_loop()
     scanner_bridge.start(loop)
     pump = asyncio.create_task(fingerprint_ws._scanner_event_pump())
-    logger.info("SAMS backend ready on port %d [%s]", settings.PORT, settings.NODE_ENV)
+    logger.info("AttendAI backend ready on port %d [%s]", settings.PORT, settings.NODE_ENV)
     try:
         yield
     finally:
@@ -64,9 +63,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="SAMS — Attendance API",
-    description="Staff Attendance Management System",
-    version="2.1.0",
+    title="AttendAI — School Attendance API",
+    description="School Staff Attendance Management System",
+    version="3.0.0",
     lifespan=lifespan,
     docs_url="/api/docs" if settings.NODE_ENV != "production" else None,
     redoc_url=None,
@@ -114,15 +113,17 @@ app.add_middleware(
     allow_origins=[settings.CORS_ORIGIN] if settings.CORS_ORIGIN != "*" else ["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
+    allow_headers=["Content-Type", "Authorization"],
     expose_headers=["Content-Disposition"],
 )
 
 # ── Routes ──────────────────────────────────────────────────────────────
 api_prefix = "/api"
 app.include_router(auth.router, prefix=api_prefix)
+app.include_router(users.router, prefix=api_prefix)
 app.include_router(people.router, prefix=api_prefix)
-app.include_router(stations.router, prefix=api_prefix)
+app.include_router(leave.router, prefix=api_prefix)
+app.include_router(notifications.router, prefix=api_prefix)
 app.include_router(holidays.router, prefix=api_prefix)
 app.include_router(attendance.router, prefix=api_prefix)
 app.include_router(reports.router, prefix=api_prefix)
@@ -134,14 +135,12 @@ app.include_router(fingerprint_ws.router)
 def health():
     return {
         "status": "ok",
+        "school": settings.SCHOOL_NAME,
         "scanner": scanner_bridge.status,
-        "station_id": settings.STATION_ID,
     }
 
 
 # ── Serve Next.js static files (installer / packaged exe mode) ────────────
-# Mounted LAST so /api/* routes always take priority.
-# STATIC_DIR is set in .env by the installer; dev mode leaves it unset.
 if settings.STATIC_DIR:
     import os
     if os.path.isdir(settings.STATIC_DIR):
@@ -153,8 +152,6 @@ if settings.STATIC_DIR:
 
 if __name__ == "__main__":
     import sys
-    # CLI helper used by the reset-admin-password.bat recovery script.
-    # Prints a PBKDF2 hash of the given password and exits immediately.
     if len(sys.argv) == 3 and sys.argv[1] == "--hash-password":
         from services.auth import hash_password
         print(hash_password(sys.argv[2]), end="")

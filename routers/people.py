@@ -1,4 +1,4 @@
-"""People CRUD + enrollment. Security: JWT required; station-admins scoped to their station."""
+"""People CRUD + enrollment. Admin: full access. Attendance: can enroll and list."""
 import logging
 import re
 from typing import List, Optional
@@ -8,15 +8,14 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from database import get_structured_db, get_templates_db
-from models.person import Person
+from models.person import Person, PERSON_ROLES
 from models import fingerprint_template  # noqa: F401 ensure model registered
-from services.auth import require_any_admin, require_super_admin
+from services.auth import require_any_staff, require_admin
 
 logger = logging.getLogger("people")
 
 router = APIRouter(tags=["people"])
 
-VALID_ROLES = {"Employee", "Manager", "Director", "Contractor", "Intern", "Admin"}
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 _EMP_ID_RE = re.compile(r"^[A-Za-z0-9\-_]{1,50}$")
 
@@ -24,12 +23,19 @@ _EMP_ID_RE = re.compile(r"^[A-Za-z0-9\-_]{1,50}$")
 class EnrollDto(BaseModel):
     employeeId: Optional[str] = Field(default=None, max_length=50)
     name: str = Field(..., min_length=2, max_length=200)
-    role: str = Field(default="Employee", max_length=50)
-    station: Optional[str] = Field(default=None, max_length=150)
+    role: str = Field(default="Staff", max_length=50)
+    department: Optional[str] = Field(default=None, max_length=150)
     scheduleStart: Optional[str] = None
     scheduleEnd: Optional[str] = None
     fingerprintTemplate: str = ""
     fingerprintTemplates: Optional[List[str]] = None
+
+    @field_validator("fingerprintTemplates")
+    @classmethod
+    def cap_templates(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None and len(v) > 12:
+            raise ValueError("fingerprintTemplates may contain at most 12 scans")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -40,8 +46,8 @@ class EnrollDto(BaseModel):
     @classmethod
     def validate_role(cls, v: str) -> str:
         v = v.strip()
-        if v not in VALID_ROLES:
-            raise ValueError(f"Role must be one of: {', '.join(sorted(VALID_ROLES))}")
+        if v not in PERSON_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(PERSON_ROLES))}")
         return v
 
     @field_validator("employeeId")
@@ -69,7 +75,7 @@ class UpdatePersonDto(BaseModel):
     employeeId: Optional[str] = Field(default=None, max_length=50)
     name: Optional[str] = Field(default=None, min_length=2, max_length=200)
     role: Optional[str] = Field(default=None, max_length=50)
-    station: Optional[str] = Field(default=None, max_length=150)
+    department: Optional[str] = Field(default=None, max_length=150)
     scheduleStart: Optional[str] = None
     scheduleEnd: Optional[str] = None
 
@@ -84,8 +90,8 @@ class UpdatePersonDto(BaseModel):
         if v is None:
             return None
         v = v.strip()
-        if v and v not in VALID_ROLES:
-            raise ValueError(f"Role must be one of: {', '.join(sorted(VALID_ROLES))}")
+        if v and v not in PERSON_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(PERSON_ROLES))}")
         return v
 
     @field_validator("scheduleStart", "scheduleEnd")
@@ -99,7 +105,7 @@ class UpdatePersonDto(BaseModel):
         return v or None
 
 
-def _duplicate_check(name: str, station: Optional[str], employee_id: Optional[str], db: Session) -> Optional[dict]:
+def _duplicate_check(name: str, employee_id: Optional[str], db: Session) -> Optional[dict]:
     if employee_id and employee_id.strip():
         existing = db.query(Person).filter(Person.employee_id == employee_id.strip()).first()
         if existing:
@@ -109,11 +115,9 @@ def _duplicate_check(name: str, station: Optional[str], employee_id: Optional[st
                 "existingPerson": existing.to_public(),
             }
 
-    station_val = station.strip() if station and station.strip() else None
     name_match = (
         db.query(Person)
         .filter(Person.name.ilike(name.strip()))
-        .filter(Person.station == station_val)
         .first()
     )
     if name_match:
@@ -128,29 +132,26 @@ def _duplicate_check(name: str, station: Optional[str], employee_id: Optional[st
 
 @router.get("/people")
 def list_people(
-    station: Optional[str] = Query(default=None, max_length=150),
-    user: dict = Depends(require_any_admin),
+    department: Optional[str] = Query(default=None, max_length=150),
+    user: dict = Depends(require_any_staff),
     db: Session = Depends(get_structured_db),
 ):
     q = db.query(Person).order_by(Person.name.asc())
-    if user.get("role") == "station-admin":
-        q = q.filter(Person.station == user.get("station"))
-    elif station:
-        q = q.filter(Person.station == station)
+    if department:
+        q = q.filter(Person.department == department)
     return [p.to_public() for p in q.all()]
 
 
-@router.get("/people/stations")
-def list_stations_from_people(
-    user: dict = Depends(require_any_admin),
+@router.get("/people/departments")
+def list_departments(
+    user: dict = Depends(require_any_staff),
     db: Session = Depends(get_structured_db),
 ):
-    """Distinct stations for filter dropdowns."""
     rows = (
-        db.query(Person.station)
-        .filter(Person.station.isnot(None))
+        db.query(Person.department)
+        .filter(Person.department.isnot(None))
         .distinct()
-        .order_by(Person.station.asc())
+        .order_by(Person.department.asc())
         .all()
     )
     return [r[0] for r in rows]
@@ -160,16 +161,12 @@ def list_stations_from_people(
 def update_person(
     person_id: int,
     dto: UpdatePersonDto,
-    user: dict = Depends(require_any_admin),
+    user: dict = Depends(require_admin),
     db: Session = Depends(get_structured_db),
 ):
     person = db.query(Person).filter(Person.id == person_id).first()
     if not person:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found")
-
-    # IDOR guard: station-admins can only edit people in their station
-    if user.get("role") == "station-admin" and person.station != user.get("station"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 
     if dto.employeeId is not None and dto.employeeId and dto.employeeId.strip():
         conflict = (
@@ -189,10 +186,8 @@ def update_person(
         person.name = dto.name.strip()
     if dto.role is not None:
         person.role = dto.role.strip()
-    if dto.station is not None:
-        # Station-admins cannot reassign people to another station
-        if user.get("role") != "station-admin":
-            person.station = dto.station.strip() or None
+    if dto.department is not None:
+        person.department = dto.department.strip() or None
     if dto.scheduleStart is not None:
         person.schedule_start = dto.scheduleStart or None
     if dto.scheduleEnd is not None:
@@ -206,7 +201,7 @@ def update_person(
 @router.delete("/people/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_person(
     person_id: int,
-    user: dict = Depends(require_super_admin),
+    user: dict = Depends(require_admin),
     db: Session = Depends(get_structured_db),
     templates_db: Session = Depends(get_templates_db),
 ):
@@ -214,57 +209,46 @@ def remove_person(
     if not person:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found")
 
-    # Resolve station_id before deleting the person record
-    station_id: Optional[int] = None
-    if person.station:
-        from models.station import Station
-        st = db.query(Station).filter(Station.name == person.station).first()
-        if st:
-            station_id = st.id
-
     db.delete(person)
     db.commit()
+
     from pipeline_db import delete_template
-    delete_template(templates_db, str(person_id), station_id)
+    delete_template(templates_db, str(person_id))
 
 
 @router.post("/enroll/check-duplicate")
 def check_duplicate(
     dto: EnrollDto,
-    user: dict = Depends(require_any_admin),
+    user: dict = Depends(require_any_staff),
     db: Session = Depends(get_structured_db),
 ):
-    effective_station = user.get("station") if user.get("role") == "station-admin" else dto.station
-    return _duplicate_check(dto.name, effective_station, dto.employeeId, db)
+    return _duplicate_check(dto.name, dto.employeeId, db)
 
 
 @router.post("/enroll", status_code=status.HTTP_201_CREATED)
 def enroll(
     dto: EnrollDto,
     background: BackgroundTasks,
-    user: dict = Depends(require_any_admin),
+    user: dict = Depends(require_any_staff),
     db: Session = Depends(get_structured_db),
 ):
-    # Station-admin: force station to their own station, ignore whatever was sent
-    effective_station = user.get("station") if user.get("role") == "station-admin" else dto.station
-
-    dup = _duplicate_check(dto.name, effective_station, dto.employeeId, db)
+    dup = _duplicate_check(dto.name, dto.employeeId, db)
     if dup["isDuplicate"]:
         reason = dup.get("reason")
         existing = dup.get("existingPerson", {})
         if reason == "employee_id":
             msg = f'Employee ID "{existing.get("employeeId")}" is already registered to {existing.get("name")}.'
         elif reason == "name":
-            msg = f'An employee named "{existing.get("name")}" already exists at this station.'
+            msg = f'A person named "{existing.get("name")}" is already enrolled in the system.'
         else:
-            msg = "Duplicate employee detected."
+            msg = "Duplicate person detected."
         raise HTTPException(status.HTTP_409_CONFLICT, msg)
 
     person = Person(
         employee_id=dto.employeeId.strip() if dto.employeeId else None,
         name=dto.name.strip(),
-        role=(dto.role or "Employee").strip(),
-        station=effective_station.strip() if effective_station else None,
+        role=(dto.role or "Staff").strip(),
+        department=dto.department.strip() if dto.department else None,
         schedule_start=dto.scheduleStart or None,
         schedule_end=dto.scheduleEnd or None,
         fingerprint_template=None,
@@ -279,21 +263,13 @@ def enroll(
     elif dto.fingerprintTemplate and dto.fingerprintTemplate != "pending":
         images = [dto.fingerprintTemplate]
 
-    # Resolve the station's numeric ID for fingerprint template tagging
-    station_id: Optional[int] = None
-    if effective_station:
-        from models.station import Station
-        st = db.query(Station).filter(Station.name == effective_station).first()
-        if st:
-            station_id = st.id
-
     if images:
-        background.add_task(_enroll_fingerprint, person.id, images, station_id)
+        background.add_task(_enroll_fingerprint, person.id, images)
 
     return {"id": person.id, "name": person.name}
 
 
-def _enroll_fingerprint(person_id: int, images_b64: List[str], station_id: Optional[int] = None) -> None:
+def _enroll_fingerprint(person_id: int, images_b64: List[str]) -> None:
     import base64
     from database import TemplatesSession
     from pipeline.enroll import enroll as run_enroll
@@ -308,10 +284,11 @@ def _enroll_fingerprint(person_id: int, images_b64: List[str], station_id: Optio
 
         db = TemplatesSession()
         try:
-            save_template(db, str(person_id), result["template_bytes"], result.get("raw_templates", []), station_id)
-            logger.info("Enrolled person_id=%s station_id=%s steps=%s", person_id, station_id, ",".join(result.get("steps_applied", [])))
+            save_template(db, str(person_id), result["template_bytes"], result.get("raw_templates", []))
+            logger.info("Enrolled person_id=%s steps=%s", person_id, ",".join(result.get("steps_applied", [])))
         finally:
             db.close()
+
         from services.template_cache import template_cache
         template_cache.invalidate()
     except Exception as exc:

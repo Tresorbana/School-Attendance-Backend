@@ -67,20 +67,14 @@ def monthly(db: Session) -> List[dict]:
     return _daily_buckets(db, 30)
 
 
-def present_today(db: Session, station: Optional[str] = None) -> dict:
+def present_today(db: Session) -> dict:
     s, _ = _today_bounds()
-    if station:
-        total = db.query(func.count(Person.id)).filter(Person.station == station).scalar() or 0
-    else:
-        total = db.query(func.count(Person.id)).scalar() or 0
-
-    pq = (
+    total = db.query(func.count(Person.id)).scalar() or 0
+    present = (
         db.query(func.count(func.distinct(Attendance.person_id)))
         .filter(Attendance.timestamp >= s, Attendance.type == "check-in")
+        .scalar() or 0
     )
-    if station:
-        pq = pq.join(Person, Attendance.person).filter(Person.station == station)
-    present = pq.scalar() or 0
     return {"present": present, "total": total, "absent": max(0, total - present)}
 
 
@@ -130,6 +124,29 @@ def _holiday_dates(db: Session, from_: datetime, to: datetime) -> Set[str]:
     return {r[0] for r in rows}
 
 
+def _approved_leave_dates(db: Session, from_: datetime, to: datetime) -> Dict[int, Set[str]]:
+    """Build a map of person_id → set of leave dates for approved leaves in the range."""
+    from models.leave_request import LeaveRequest
+    reqs = (
+        db.query(LeaveRequest)
+        .filter(
+            LeaveRequest.status == "approved",
+            LeaveRequest.to_date >= from_.date().isoformat(),
+            LeaveRequest.from_date <= to.date().isoformat(),
+        )
+        .all()
+    )
+    result: Dict[int, Set[str]] = {}
+    for req in reqs:
+        start = date.fromisoformat(req.from_date)
+        end = date.fromisoformat(req.to_date)
+        cur = start
+        while cur <= end:
+            result.setdefault(req.person_id, set()).add(cur.isoformat())
+            cur += timedelta(days=1)
+    return result
+
+
 def _count_working_days(year: int, month: int, holidays: Set[str]) -> int:
     last = (
         date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
@@ -146,7 +163,6 @@ def _count_working_days(year: int, month: int, holidays: Set[str]) -> int:
 
 
 def _schedule_net_minutes(start: Optional[str], end: Optional[str]) -> int:
-    """Scheduled minutes = end − start. No automatic break deductions."""
     if not start or not end:
         return 0
     sh, sm = map(int, start.split(":"))
@@ -158,7 +174,6 @@ def monthly_working_hours(
     db: Session,
     year: int,
     month: int,
-    station: Optional[str] = None,
     person_id: Optional[int] = None,
 ) -> List[dict]:
     from_ = datetime(year, month, 1)
@@ -167,7 +182,8 @@ def monthly_working_hours(
     ) - timedelta(milliseconds=1)
 
     holidays = _holiday_dates(db, from_, to)
-    sessions = get_daily_sessions(db, from_, to, station, person_id, holidays)
+    leave_dates = _approved_leave_dates(db, from_, to)
+    sessions = get_daily_sessions(db, from_, to, person_id, holidays, leave_dates)
     required_days = _count_working_days(year, month, holidays)
 
     late_grace = settings.LATE_GRACE_MINUTES
@@ -181,17 +197,19 @@ def monthly_working_hours(
     for _pid, person_sessions in by_person.items():
         first = person_sessions[0]
         sched_min = _schedule_net_minutes(first["scheduleStart"], first["scheduleEnd"])
+
+        # Count approved leave days for this person this month
+        person_leave_days = len(leave_dates.get(_pid, set()))
+        effective_required_days = max(0, required_days - person_leave_days)
+
         present = len(person_sessions)
         total_worked = sum((s["workedMinutes"] or 0) for s in person_sessions)
-        # Per-day overtime: days where worked > daily schedule
         total_overtime = sum((s.get("overtimeMinutes") or 0) for s in person_sessions)
-        required_min = sched_min * required_days
-        # deficitMinutes > 0 → they owe time; overtimeMinutes is monthly net excess
+        required_min = sched_min * effective_required_days
         net = total_worked - required_min
         deficit_min = max(0, -net)
         monthly_overtime_min = max(0, net)
 
-        # Late: delay > grace period (positive delay = late arrival)
         late_days = sum(
             1 for s in person_sessions
             if s.get("delayMinutes") is not None and s["delayMinutes"] > late_grace
@@ -202,7 +220,6 @@ def monthly_working_hours(
             if s.get("delayMinutes") is not None and s["delayMinutes"] > late_grace
         )
 
-        # Early departure: positive early_dep > grace → left before schedule end
         early_days = sum(
             1 for s in person_sessions
             if s.get("earlyDepartureMinutes") is not None and s["earlyDepartureMinutes"] > early_grace
@@ -215,17 +232,18 @@ def monthly_working_hours(
             "employee_id": first["employee_id"],
             "name": first["name"],
             "role": first["role"],
-            "station": first["station"],
+            "department": first.get("department"),
             "scheduleStart": first["scheduleStart"],
             "scheduleEnd": first["scheduleEnd"],
-            "requiredDays": required_days,
+            "requiredDays": effective_required_days,
+            "leaveDays": person_leave_days,
             "presentDays": present,
-            "absentDays": max(0, required_days - present),
+            "absentDays": max(0, effective_required_days - present),
             "totalWorkedMinutes": total_worked,
             "requiredMinutes": required_min,
-            "deficitMinutes": deficit_min,          # shortfall (positive = owes time)
-            "overtimeMinutes": monthly_overtime_min, # net excess for the month
-            "totalDailyOvertimeMinutes": total_overtime,  # sum of per-day overtime
+            "deficitMinutes": deficit_min,
+            "overtimeMinutes": monthly_overtime_min,
+            "totalDailyOvertimeMinutes": total_overtime,
             "lateDays": late_days,
             "totalDelayMinutes": total_delay,
             "earlyDepartureDays": early_days,
@@ -248,7 +266,6 @@ def export_csv(
     db: Session,
     from_: Optional[str] = None,
     to: Optional[str] = None,
-    station: Optional[str] = None,
 ) -> str:
     q = (
         db.query(Attendance)
@@ -259,20 +276,16 @@ def export_csv(
         q = q.filter(Attendance.timestamp >= datetime.fromisoformat(from_))
     if to:
         q = q.filter(Attendance.timestamp < datetime.fromisoformat(to) + timedelta(days=1))
-    if station:
-        q = q.join(Person, Attendance.person).filter(Person.station == station)
     records = q.all()
 
     buf = StringIO()
     generated = datetime.utcnow().isoformat()
     period = f"{from_ or 'all time'} to {to or 'today'}" if (from_ or to) else "all records"
-    buf.write('"Staff Attendance Management System (SAMS) — Attendance Report"\r\n')
+    buf.write('"AttendAI — School Attendance Report"\r\n')
     buf.write(f'"Generated","{generated}"\r\n')
     buf.write(f'"Period","{period}"\r\n')
-    if station:
-        buf.write(f'"Station","{_csv_escape(station)}"\r\n')
     buf.write(f'"Total records","{len(records)}"\r\n\r\n')
-    buf.write("Date,Employee ID,Employee Name,Role,Station,Type,Time\r\n")
+    buf.write("Date,Employee ID,Name,Role,Department,Type,Time,Emergency\r\n")
     for r in records:
         ts = r.timestamp
         p = r.person
@@ -281,24 +294,24 @@ def export_csv(
             f'"{_csv_escape(p.employee_id if p else "")}",'
             f'"{_csv_escape(p.name if p else "")}",'
             f'"{_csv_escape(p.role if p else "")}",'
-            f'"{_csv_escape(p.station if p else "")}",'
+            f'"{_csv_escape(p.department if p else "")}",'
             f'{r.type},'
-            f'{ts.strftime("%I:%M %p") if ts else ""}\r\n'
+            f'{ts.strftime("%I:%M %p") if ts else ""},'
+            f'{"Yes" if r.is_emergency else ""}\r\n'
         )
     return buf.getvalue()
 
 
-def export_monthly_csv(db: Session, year: int, month: int, station: Optional[str] = None) -> str:
-    rows = monthly_working_hours(db, year, month, station)
+def export_monthly_csv(db: Session, year: int, month: int) -> str:
+    rows = monthly_working_hours(db, year, month)
     buf = StringIO()
     month_name = datetime(year, month, 1).strftime("%B %Y")
-    buf.write('"Staff Attendance Management System (SAMS)"\r\n')
+    buf.write('"AttendAI — School Attendance Management"\r\n')
     buf.write(f'"Monthly Working Hours Report — {month_name}"\r\n')
-    buf.write(f'"Station","{station or "All Stations"}"\r\n')
     buf.write(f'"Generated","{datetime.utcnow().isoformat()}"\r\n\r\n')
     buf.write(
-        "Employee ID,Name,Role,Station,Schedule,"
-        "Required Days,Present Days,Absent Days,"
+        "Employee ID,Name,Role,Department,Schedule,"
+        "Required Days,Leave Days,Present Days,Absent Days,"
         "Required Hours,Worked Hours,Deficit Hours,Overtime Hours,"
         "Late Days,Total Delay (min),Early Departure Days,Missed Checkout Days\r\n"
     )
@@ -312,9 +325,9 @@ def export_monthly_csv(db: Session, year: int, month: int, station: Optional[str
             f'"{_csv_escape(r["employee_id"] or "")}",'
             f'"{_csv_escape(r["name"])}",'
             f'"{_csv_escape(r["role"])}",'
-            f'"{_csv_escape(r["station"] or "")}",'
+            f'"{_csv_escape(r.get("department") or "")}",'
             f'"{sched}",'
-            f'{r["requiredDays"]},{r["presentDays"]},{r["absentDays"]},'
+            f'{r["requiredDays"]},{r.get("leaveDays", 0)},{r["presentDays"]},{r["absentDays"]},'
             f'{r["requiredMinutes"]/60:.1f},{r["totalWorkedMinutes"]/60:.1f},'
             f'{r["deficitMinutes"]/60:.1f},{r["overtimeMinutes"]/60:.1f},'
             f'{r["lateDays"]},{r["totalDelayMinutes"]},'

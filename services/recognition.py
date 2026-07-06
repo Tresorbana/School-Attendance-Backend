@@ -1,9 +1,6 @@
-"""
-Recognition coordinator: run identify → check cooldown → resolve action → record attendance.
-"""
+"""Recognition coordinator: identify → cooldown check → resolve action → record."""
 import logging
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -20,16 +17,12 @@ logger = logging.getLogger("recognition")
 def identify_and_record(
     image_bytes: bytes,
     mode: str = "auto",
-    station_id: Optional[int] = None,
 ) -> dict:
     """
-    Run pipeline on image, find best match within the given station, then record
-    attendance. station_id=None searches ALL templates (super-admin use only).
+    Run the fingerprint pipeline against all enrolled templates, then record
+    the appropriate attendance action.
     """
-    # Resolve effective station — prefer explicit arg, fall back to configured default
-    effective_station_id = station_id if station_id is not None else settings.STATION_ID
-
-    enrolled = template_cache.get(effective_station_id)
+    enrolled = template_cache.get()
     py = pipeline_identify(image_bytes, enrolled)
 
     if py.get("flag") == "low_confidence":
@@ -51,7 +44,7 @@ def identify_and_record(
 
     db: Session = StructuredSession()
     try:
-        person: Optional[Person] = db.query(Person).filter(Person.id == person_id).first()
+        person = db.query(Person).filter(Person.id == person_id).first()
         if not person:
             logger.warning("identify matched id=%s but person not in DB", person_id)
             return {"matched": False, "pipeline": "python"}
@@ -91,8 +84,14 @@ def identify_and_record(
                 "mode": mode,
             }
 
-        att_svc.record(db, person.id, score, resolved["action"])
-        return {
+        is_emergency = resolved.get("is_emergency", False)
+        entry = att_svc.record(
+            db, person.id, score, resolved["action"],
+            is_emergency=is_emergency,
+            notes="Emergency checkout" if is_emergency else None,
+        )
+
+        result = {
             "matched": True,
             "name": person.name,
             "score": score,
@@ -101,6 +100,31 @@ def identify_and_record(
             "cooldown": False,
             "pipeline": "python",
             "mode": mode,
+            "isEmergency": is_emergency,
         }
+
+        if is_emergency:
+            _create_emergency_notification(db, person.id, person.name, entry.id)
+            result["emergencyAlert"] = True
+
+        return result
     finally:
         db.close()
+
+
+def _create_emergency_notification(db: Session, person_id: int, person_name: str, attendance_id: int) -> None:
+    """Persist an emergency checkout notification."""
+    from models.notification import Notification
+    note = Notification(
+        type="emergency_checkout",
+        message=f"{person_name} has triggered an emergency checkout and is leaving early.",
+        person_id=person_id,
+        person_name=person_name,
+        attendance_id=attendance_id,
+    )
+    db.add(note)
+    try:
+        db.commit()
+    except Exception as exc:
+        logger.warning("Failed to persist emergency notification: %s", exc)
+        db.rollback()

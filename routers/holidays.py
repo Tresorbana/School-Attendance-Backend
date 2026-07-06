@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from database import get_structured_db
 from models.holiday import Holiday
-from services.auth import require_admin_key, require_any_admin, require_super_admin
+from services.auth import require_admin, require_any_staff
 
 router = APIRouter(prefix="/holidays", tags=["holidays"])
 
@@ -27,7 +27,7 @@ class UpdateHolidayDto(BaseModel):
 @router.get("")
 def list_all(
     year: Optional[int] = None,
-    user: dict = Depends(require_any_admin),
+    user: dict = Depends(require_any_staff),
     db: Session = Depends(get_structured_db),
 ):
     if year is not None:
@@ -43,7 +43,7 @@ def list_all(
     return [h.to_public() for h in q.all()]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_super_admin)])
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 def create(dto: CreateHolidayDto, db: Session = Depends(get_structured_db)):
     h = Holiday(name=dto.name.strip(), date=dto.date, confirmed=dto.confirmed)
     db.add(h)
@@ -52,7 +52,7 @@ def create(dto: CreateHolidayDto, db: Session = Depends(get_structured_db)):
     return h.to_public()
 
 
-@router.patch("/{holiday_id}", dependencies=[Depends(require_super_admin)])
+@router.patch("/{holiday_id}", dependencies=[Depends(require_admin)])
 def update(holiday_id: int, dto: UpdateHolidayDto, db: Session = Depends(get_structured_db)):
     h = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not h:
@@ -68,7 +68,7 @@ def update(holiday_id: int, dto: UpdateHolidayDto, db: Session = Depends(get_str
     return h.to_public()
 
 
-@router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_super_admin)])
+@router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
 def remove(holiday_id: int, db: Session = Depends(get_structured_db)):
     h = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not h:
@@ -127,7 +127,7 @@ def _islamic_dates(year: int) -> dict:
     }
 
 
-@router.post("/seed/{year}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_key)])
+@router.post("/seed/{year}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
 def seed_defaults(year: int, db: Session = Depends(get_structured_db)):
     if year < 2000 or year > 2100:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid year")
