@@ -83,6 +83,10 @@ class ScannerBridge:
             self._emit({"type": "status", "status": s})
 
     def _run(self) -> None:
+        if sys.platform != "win32":
+            logger.info("Non-Windows platform — fingerprint bridge disabled.")
+            self._set_status("disconnected")
+            return
         delay = 2.0
         while not self._stop.is_set():
             try:
