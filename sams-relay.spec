@@ -32,6 +32,8 @@ a = Analysis(
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
         'PIL._tkinter_finder',
+        'scanner',
+        'scanner.bridge_client',
     ],
     excludes=[
         'torch', 'torchvision', 'torchaudio', 'transformers',

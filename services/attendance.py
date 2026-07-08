@@ -10,7 +10,7 @@ from models.attendance import Attendance
 from models.person import Person
 
 AttendanceType = str   # 'check-in' | 'check-out' | 'break-start' | 'break-end'
-AttendanceStage = str  # 'checked-out' | 'checked-in' | 'on-break'
+AttendanceStage = str  # 'checked-out' | 'checked-in' | 'on-break' | 'returned-from-break'
 
 # 4-scan labels for the school context
 SCAN_LABELS = {
@@ -70,14 +70,18 @@ def get_current_stage(db: Session, person_id: int) -> AttendanceStage:
         return "checked-out"
     if latest.type == "break-start":
         return "on-break"
+    if latest.type == "break-end":
+        return "returned-from-break"
     return "checked-in"
 
 
 def next_action(stage: AttendanceStage) -> AttendanceType:
+    # Full 4-scan sequence: check-in → break-start → break-end → check-out
     return {
-        "checked-out": "check-in",
-        "checked-in":  "check-out",
-        "on-break":    "break-end",
+        "checked-out":         "check-in",
+        "checked-in":          "break-start",
+        "on-break":            "break-end",
+        "returned-from-break": "check-out",
     }[stage]
 
 
@@ -96,7 +100,7 @@ def resolve_action(stage: AttendanceStage, mode: str) -> dict:
         return {"action": next_action(stage)}
 
     if mode == "break-start":
-        if stage == "checked-out":
+        if stage in ("checked-out", "returned-from-break"):
             return {"error": "not_checked_in"}
         if stage == "on-break":
             return {"error": "already_on_break"}
