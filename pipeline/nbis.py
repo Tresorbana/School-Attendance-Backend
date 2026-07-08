@@ -13,8 +13,10 @@ NIST's recommended decision threshold is 40; many deployments use 50 to be
 strict. Score is monotonic and unbounded — there is no noise floor.
 
 Setup:
-  Place mindtct.exe and bozorth3.exe under  backend/bridge/nbis/
-  (Override with the NBIS_PATH environment variable.)
+  Windows: place mindtct.exe + bozorth3.exe under backend/bridge/nbis/
+  Linux:   install native NBIS (apt install nbis) or place Wine wrapper
+           scripts named mindtct/bozorth3 in /usr/local/bin/
+  Override search path with the NBIS_PATH environment variable.
 
 Public API (matches embedding.py / minutiae.py):
   template = NbisTemplate(grayscale_image)        # np.ndarray uint8
@@ -43,6 +45,11 @@ _NBIS_SEARCH_DIRS = [
     Path(os.environ["NBIS_PATH"]) if os.environ.get("NBIS_PATH") else None,
     _BACKEND / "bridge" / "nbis",
     _BACKEND / "nbis",
+    # Linux system paths — covers native NBIS packages and Wine wrappers
+    *(
+        [Path("/usr/local/bin"), Path("/usr/bin")]
+        if sys.platform != "win32" else []
+    ),
 ]
 
 
