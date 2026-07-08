@@ -75,6 +75,7 @@ _sessions = _CoverageSessions()
 
 class IdentifyDto(BaseModel):
     image: str  # base64 PNG
+    mode: str = "auto"
 
 
 class CoverageDto(BaseModel):
@@ -132,10 +133,10 @@ def scan_quality(dto: QualityDto):
 
 @router.post("/identify")
 def identify_route(dto: IdentifyDto):
-    """HTTP identify — used by the recognition controller equivalent in the frontend."""
+    """HTTP identify — used by the relay and direct frontend calls."""
     from services.recognition import identify_and_record
     img = base64.b64decode(dto.image)
-    return identify_and_record(img)
+    return identify_and_record(img, dto.mode)
 
 
 @router.post("/enroll")
