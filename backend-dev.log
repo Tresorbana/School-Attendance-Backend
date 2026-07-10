@@ -1,0 +1,46 @@
+INFO:     127.0.0.1:64603 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64603 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53976 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53976 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "OPTIONS /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "OPTIONS /api/attendance/recent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "OPTIONS /api/reports/present-today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "OPTIONS /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "OPTIONS /api/attendance/recent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "OPTIONS /api/reports/present-today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "GET /api/attendance/recent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "GET /api/reports/present-today HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "GET /api/attendance/recent HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57670 - "GET /api/reports/present-today HTTP/1.1" 200 OK
+[identify] preprocess=0.051s probe=0.508s match=1.904s total=2.462s enrolled=21 clarity=1.00 best=28.0 2nd=9.0 gap=19.0/3.11x effective_thresh=70.0 flag=confirmed tier=T2
+INFO:     127.0.0.1:58833 - "POST /api/identify HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62885 - "OPTIONS /api/enroll/check-duplicate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62885 - "POST /api/enroll/check-duplicate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50778 - "GET /api/attendance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50778 - "GET /api/attendance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62649 - "POST /api/enroll/check-duplicate HTTP/1.1" 200 OK
+[identify] preprocess=0.010s probe=0.322s match=1.706s total=2.038s enrolled=21 clarity=1.00 best=43.0 2nd=12.0 gap=31.0/3.58x effective_thresh=70.0 flag=confirmed tier=T2
+INFO:     127.0.0.1:64515 - "OPTIONS /api/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64515 - "POST /api/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59539 - "POST /api/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59539 - "POST /api/coverage HTTP/1.1" 200 OK
+[identify] preprocess=0.010s probe=0.299s match=1.731s total=2.040s enrolled=21 clarity=1.00 best=23.0 2nd=17.0 gap=6.0/1.35x effective_thresh=70.0 flag=low_confidence
+[identify] preprocess=0.011s probe=0.261s match=1.521s total=1.792s enrolled=21 clarity=1.00 best=32.0 2nd=8.0 gap=24.0/4.00x effective_thresh=70.0 flag=confirmed tier=T2
+[identify] preprocess=0.011s probe=0.303s match=1.730s total=2.043s enrolled=21 clarity=1.00 best=10.0 2nd=9.0 gap=1.0/1.11x effective_thresh=70.0 flag=low_confidence
+[identify] preprocess=0.010s probe=0.267s match=1.727s total=2.004s enrolled=21 clarity=1.00 best=14.0 2nd=11.0 gap=3.0/1.27x effective_thresh=70.0 flag=low_confidence
+[identify] preprocess=0.014s probe=0.307s match=1.568s total=1.889s enrolled=21 clarity=1.00 best=24.0 2nd=14.0 gap=10.0/1.71x effective_thresh=70.0 flag=low_confidence
+INFO:     127.0.0.1:49667 - "POST /api/coverage HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49667 - "OPTIONS /api/enroll HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49667 - "POST /api/enroll HTTP/1.1" 201 Created
+[identify] preprocess=0.011s probe=0.322s match=1.702s total=2.036s enrolled=21 clarity=1.00 best=16.0 2nd=12.0 gap=4.0/1.33x effective_thresh=70.0 flag=low_confidence
+INFO:     127.0.0.1:65069 - "POST /api/identify HTTP/1.1" 200 OK
+[identify] preprocess=0.010s probe=0.323s match=1.748s total=2.081s enrolled=21 clarity=1.00 best=19.0 2nd=18.0 gap=1.0/1.06x effective_thresh=70.0 flag=low_confidence
+INFO:     127.0.0.1:65071 - "POST /api/identify HTTP/1.1" 200 OK
+[identify] preprocess=0.029s probe=0.281s match=1.620s total=1.930s enrolled=21 clarity=1.00 best=24.0 2nd=17.0 gap=7.0/1.41x effective_thresh=70.0 flag=low_confidence
+INFO:     127.0.0.1:59444 - "POST /api/identify HTTP/1.1" 200 OK
+[identify] preprocess=0.011s probe=0.304s match=1.668s total=1.983s enrolled=21 clarity=1.00 best=28.0 2nd=16.0 gap=12.0/1.75x effective_thresh=70.0 flag=low_confidence
+INFO:     127.0.0.1:62628 - "POST /api/identify HTTP/1.1" 200 OK
