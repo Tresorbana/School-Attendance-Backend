@@ -1,7 +1,0 @@
-INFO:     127.0.0.1:61177 - "GET /api/health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61177 - "POST /api/stations/seed-demo HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61177 - "POST /api/holidays/seed/2026 HTTP/1.1" 204 No Content
-INFO:     127.0.0.1:61177 - "GET /api/stations HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61177 - "GET /api/holidays HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61177 - "POST /api/auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61177 - "GET /api/stats HTTP/1.1" 200 OK
