@@ -1,0 +1,9 @@
+INFO:     Started server process [25868]
+INFO:     Waiting for application startup.
+13:04:38 [INFO] relay: SAMS Relay ready — port 8001, VPS=http://localhost:8000
+13:04:38 [INFO] scanner: Triggering fingerprint bridge scheduled task…
+13:04:38 [WARNING] relay: STATIC_DIR not found (D:\NemaTechnologies\Attendance\backend\frontend) — frontend not served
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     ('127.0.0.1', 56760) - "WebSocket /fingerprint?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmVzb3IiLCJyb2xlIjoiYXR0ZW5kYW5jZSIsImZ1bGxfbmFtZSI6IkJBTkEgRW1teSBUcmVzb3IiLCJpYXQiOjE3ODM2Nzk1NzcsImV4cCI6MTc4MzcyMjc3N30.tPmbbq1f_7ubI715mOV_cIE-WWiLMpFyrFF_mfQ5WRM" [accepted]
+INFO:     connection open

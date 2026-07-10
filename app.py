@@ -1,5 +1,5 @@
 """
-AttendAI School Attendance backend.
+SAMS — Staff Attendance Management System backend.
 Listens on port 8000 with /api/* prefix.
 """
 import asyncio
@@ -54,7 +54,7 @@ async def lifespan(_app: FastAPI):
     loop = asyncio.get_running_loop()
     scanner_bridge.start(loop)
     pump = asyncio.create_task(fingerprint_ws._scanner_event_pump())
-    logger.info("AttendAI backend ready on port %d [%s]", settings.PORT, settings.NODE_ENV)
+    logger.info("SAMS backend ready on port %d [%s]", settings.PORT, settings.NODE_ENV)
     try:
         yield
     finally:
@@ -63,8 +63,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="AttendAI — School Attendance API",
-    description="School Staff Attendance Management System",
+    title="SAMS — Staff Attendance Management System",
+    description="Staff Attendance Management System API",
     version="3.0.0",
     lifespan=lifespan,
     docs_url="/api/docs" if settings.NODE_ENV != "production" else None,

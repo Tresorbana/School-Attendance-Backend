@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 echo =====================================================
-echo  AttendAI Fingerprint Scanner - One-Time Admin Setup
+echo  SAMS Fingerprint Scanner - One-Time Admin Setup
 echo  Run this script ONCE as Administrator.
 echo =====================================================
 echo.
@@ -54,14 +54,14 @@ powershell -NoProfile -Command ^
 if !ERRORLEVEL! NEQ 0 (
     echo.
     echo      Could not add %USERNAME% to WinBiometricGroup automatically.
-    echo      Fallback: run the AttendAI backend as Administrator.
+    echo      Fallback: run the SAMS backend as Administrator.
 )
 
 :setup_done
 echo.
 echo Setup complete!
 echo   - If you were just added to WinBiometricGroup: LOG OUT and back in, then
-echo     restart the AttendAI backend.
+echo     restart the SAMS backend.
 echo   - If you were already in the group (or as a fallback): restart the backend
 echo     as Administrator.
 pause

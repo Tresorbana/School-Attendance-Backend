@@ -22,6 +22,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Set
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 import httpx
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware

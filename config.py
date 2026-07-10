@@ -21,7 +21,7 @@ class Settings:
     TRUST_PROXY: bool = os.environ.get("TRUST_PROXY", "false").lower() == "true"
 
     # ── School identity ──────────────────────────────────────────────────
-    SCHOOL_NAME: str = os.environ.get("SCHOOL_NAME", "AttendAI School")
+    SCHOOL_NAME: str = os.environ.get("SCHOOL_NAME", "SAMS")
 
     # ── Auth ─────────────────────────────────────────────────────────────
     ADMIN_USERNAME: str = os.environ.get("ADMIN_USERNAME", "admin")
@@ -33,7 +33,7 @@ class Settings:
     # ── Databases ────────────────────────────────────────────────────────
     DATABASE_URL: str = os.environ.get(
         "DATABASE_URL",
-        "postgresql+psycopg2://attendai:attendai_secret@localhost:5432/attendai",
+        "postgresql+psycopg2://sams:sams_secret@localhost:5432/sams",
     )
     TEMPLATES_DB_URL: str = os.environ.get(
         "TEMPLATES_DB_URL",

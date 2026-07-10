@@ -281,7 +281,7 @@ def export_csv(
     buf = StringIO()
     generated = datetime.utcnow().isoformat()
     period = f"{from_ or 'all time'} to {to or 'today'}" if (from_ or to) else "all records"
-    buf.write('"AttendAI — School Attendance Report"\r\n')
+    buf.write('"SAMS — Staff Attendance Report"\r\n')
     buf.write(f'"Generated","{generated}"\r\n')
     buf.write(f'"Period","{period}"\r\n')
     buf.write(f'"Total records","{len(records)}"\r\n\r\n')
@@ -306,7 +306,7 @@ def export_monthly_csv(db: Session, year: int, month: int) -> str:
     rows = monthly_working_hours(db, year, month)
     buf = StringIO()
     month_name = datetime(year, month, 1).strftime("%B %Y")
-    buf.write('"AttendAI — School Attendance Management"\r\n')
+    buf.write('"SAMS — Staff Attendance Management"\r\n')
     buf.write(f'"Monthly Working Hours Report — {month_name}"\r\n')
     buf.write(f'"Generated","{datetime.utcnow().isoformat()}"\r\n\r\n')
     buf.write(

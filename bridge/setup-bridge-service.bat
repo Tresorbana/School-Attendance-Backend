@@ -8,14 +8,14 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-set "TASK_NAME=AttendAIFingerprintBridge"
+set "TASK_NAME=SAMSFingerprintBridge"
 set "BRIDGE_EXE=%~dp0FingerprintBridge.exe"
-set "PS_FILE=%TEMP%\attendai_setup.ps1"
+set "PS_FILE=%TEMP%\sams_setup.ps1"
 
 cls
 echo.
 echo  ============================================================
-echo   AttendAI - Fingerprint Scanner One-Time Setup
+echo   SAMS - Fingerprint Scanner One-Time Setup
 echo   Run this ONCE. After this the scanner works automatically.
 echo  ============================================================
 echo.
@@ -63,11 +63,11 @@ if "!GRP_RESULT!"=="ADDED" (
 :: ── Step 2: Remove old Windows Service and stale task ────────────────────────
 echo  [2/3] Cleaning up any previous installation...
 
-sc query "AttendAIFingerprint" >nul 2>&1
+sc query "SAMSFingerprint" >nul 2>&1
 if !errorlevel! equ 0 (
-    sc stop "AttendAIFingerprint" >nul 2>&1
+    sc stop "SAMSFingerprint" >nul 2>&1
     timeout /t 3 /nobreak >nul
-    sc delete "AttendAIFingerprint" >nul 2>&1
+    sc delete "SAMSFingerprint" >nul 2>&1
     timeout /t 1 /nobreak >nul
 )
 

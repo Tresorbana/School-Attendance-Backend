@@ -1,10 +1,10 @@
 """
 Connect to the FingerprintBridge Windows scheduled task / exe via named pipe
-\\.\pipe\AttendAIFingerprint and stream events to an asyncio.Queue.
+\\.\pipe\SAMSFingerprint and stream events to an asyncio.Queue.
 
 Mirrors the NestJS FingerprintScannerService behaviour:
   - try the named pipe first
-  - if not connected, run `schtasks /run /tn AttendAIFingerprintBridge`
+  - if not connected, run `schtasks /run /tn SAMSFingerprintBridge`
   - if still nothing, spawn bridge/FingerprintBridge.exe directly
   - emit dict events: {"type": "status" | "scan" | "quality" | "error", ...}
 """
@@ -21,8 +21,8 @@ from typing import Optional
 
 logger = logging.getLogger("scanner")
 
-SERVICE_PIPE = r"\\.\pipe\AttendAIFingerprint"
-SCHEDULED_TASK = "AttendAIFingerprintBridge"
+SERVICE_PIPE = r"\\.\pipe\SAMSFingerprint"
+SCHEDULED_TASK = "SAMSFingerprintBridge"
 
 # In a PyInstaller one-folder bundle sys.executable is the .exe itself;
 # __file__ resolves to an internal extraction temp dir and is unreliable.
