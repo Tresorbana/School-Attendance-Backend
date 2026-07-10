@@ -109,3 +109,4 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 2026-07-10 13:17:38 [INFO] scanner: Starting fingerprint bridge exe: D:\NemaTechnologies\Attendance\backend\bridge\FingerprintBridge.exe
 2026-07-10 13:17:38 [DEBUG] scanner: Bridge non-JSON: [Bridge] DPFP capture started (U.are.U 4500)
 2026-07-10 13:17:38 [DEBUG] scanner: Bridge non-JSON: [Bridge] Reader connected: 00000000-0000-0000-0000-000000000000
+2026-07-10 13:18:42 [INFO] scanner: Triggering fingerprint bridge scheduled task…
