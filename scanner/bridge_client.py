@@ -1,10 +1,15 @@
 """
 Connect to the FingerprintBridge Windows scheduled task / exe via named pipe
-\\.\pipe\SAMSFingerprint and stream events to an asyncio.Queue.
+\\.\pipe\AttendAIFingerprint and stream events to an asyncio.Queue.
+
+Note: pipe/task identifiers are hardcoded inside the compiled
+FingerprintBridge.exe (see bridge/FingerprintBridge.cs). They stay
+AttendAI-named until the exe is rebuilt; the user-facing SAMS branding
+is unaffected.
 
 Mirrors the NestJS FingerprintScannerService behaviour:
   - try the named pipe first
-  - if not connected, run `schtasks /run /tn SAMSFingerprintBridge`
+  - if not connected, run `schtasks /run /tn AttendAIFingerprintBridge`
   - if still nothing, spawn bridge/FingerprintBridge.exe directly
   - emit dict events: {"type": "status" | "scan" | "quality" | "error", ...}
 """
@@ -21,8 +26,8 @@ from typing import Optional
 
 logger = logging.getLogger("scanner")
 
-SERVICE_PIPE = r"\\.\pipe\SAMSFingerprint"
-SCHEDULED_TASK = "SAMSFingerprintBridge"
+SERVICE_PIPE = r"\\.\pipe\AttendAIFingerprint"
+SCHEDULED_TASK = "AttendAIFingerprintBridge"
 
 # In a PyInstaller one-folder bundle sys.executable is the .exe itself;
 # __file__ resolves to an internal extraction temp dir and is unreliable.
@@ -87,21 +92,37 @@ class ScannerBridge:
             logger.info("Non-Windows platform — fingerprint bridge disabled.")
             self._set_status("disconnected")
             return
+        # FingerprintBridge.exe self-exits after ~60s of idle; we respawn it
+        # instantly, but we only tell the frontend "disconnected" if the
+        # outage lasts past this grace window. Prevents UI flicker on the
+        # normal re-spawn cycle.
+        DISCONNECT_GRACE_S = 20.0
         delay = 2.0
+        outage_since: Optional[float] = None
         while not self._stop.is_set():
+            made_contact = False
             try:
                 if self._try_pipe():
+                    made_contact = True
                     delay = 2.0
                 else:
                     self._trigger_task()
                     _wait(3.0, self._stop)
                     if self._try_pipe():
+                        made_contact = True
                         delay = 2.0
                     else:
-                        self._spawn_exe_blocking()
+                        made_contact = self._spawn_exe_blocking()
             except Exception as exc:
                 logger.exception("Scanner bridge loop error: %s", exc)
-            self._set_status("disconnected")
+            if made_contact:
+                outage_since = asyncio_now()  # exe/pipe just detached; start grace
+                delay = 2.0
+            else:
+                if outage_since is None:
+                    outage_since = asyncio_now()
+                if asyncio_now() - outage_since > DISCONNECT_GRACE_S:
+                    self._set_status("disconnected")
             _wait(min(delay, 30.0), self._stop)
             delay = min(delay * 2, 30.0)
 
@@ -146,12 +167,19 @@ class ScannerBridge:
         except Exception:
             pass
 
-    def _spawn_exe_blocking(self) -> None:
+    def _spawn_exe_blocking(self) -> bool:
+        """Spawn the bridge exe and read events until it exits.
+
+        Returns True if the exe ran long enough to indicate a healthy WinBio
+        session (i.e., successfully initialised and streamed events). Returns
+        False if it exited within 3 seconds — typical for DPFP_INIT_ERROR when
+        the scanner is unplugged or the driver is missing.
+        """
         exe = _find_bridge_exe()
         if not exe:
             logger.warning("FingerprintBridge.exe not found; install the bridge scheduled task.")
             _wait(10.0, self._stop)
-            return
+            return False
         # Release the scanner from any zombie bridge before claiming it.
         self._kill_lingering()
         logger.info("Starting fingerprint bridge exe: %s", exe)
@@ -165,7 +193,8 @@ class ScannerBridge:
             )
         except Exception as exc:
             logger.error("Failed to spawn bridge: %s", exc)
-            return
+            return False
+        start = asyncio_now()
         self._set_status("ready")
         try:
             self._read_lines(proc.stdout)
@@ -174,6 +203,7 @@ class ScannerBridge:
                 proc.kill()
             except Exception:
                 pass
+        return (asyncio_now() - start) > 3.0
 
     def _read_lines(self, stream) -> None:
         try:

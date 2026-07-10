@@ -8,7 +8,10 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-set "TASK_NAME=SAMSFingerprintBridge"
+:: Task/service names must match those hardcoded in FingerprintBridge.cs
+:: (AttendAIFingerprint / AttendAIFingerprintBridge). Rebuild the exe from
+:: source if you want to change them.
+set "TASK_NAME=AttendAIFingerprintBridge"
 set "BRIDGE_EXE=%~dp0FingerprintBridge.exe"
 set "PS_FILE=%TEMP%\sams_setup.ps1"
 
@@ -63,11 +66,11 @@ if "!GRP_RESULT!"=="ADDED" (
 :: ── Step 2: Remove old Windows Service and stale task ────────────────────────
 echo  [2/3] Cleaning up any previous installation...
 
-sc query "SAMSFingerprint" >nul 2>&1
+sc query "AttendAIFingerprint" >nul 2>&1
 if !errorlevel! equ 0 (
-    sc stop "SAMSFingerprint" >nul 2>&1
+    sc stop "AttendAIFingerprint" >nul 2>&1
     timeout /t 3 /nobreak >nul
-    sc delete "SAMSFingerprint" >nul 2>&1
+    sc delete "AttendAIFingerprint" >nul 2>&1
     timeout /t 1 /nobreak >nul
 )
 

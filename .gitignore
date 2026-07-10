@@ -1,14 +1,27 @@
+# Secrets — never commit
 .env
-*.err
-*.log
+.env.*
+!.env.example
+
+# Runtime data — machine-local only
 *.db
 *.db-shm
 *.db-wal
+*.err
+*.log
+fingerprint_log.txt
+
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 venv/
 .venv/
-bridge/
 *.egg-info/
 .pytest_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
