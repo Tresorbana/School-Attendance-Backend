@@ -1,4 +1,6 @@
 .env
+*.err
+*.log
 *.db
 *.db-shm
 *.db-wal
