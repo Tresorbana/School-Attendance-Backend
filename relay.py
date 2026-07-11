@@ -18,12 +18,20 @@ import io
 import json
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Set
 
+# When frozen by PyInstaller, __file__ lives inside _internal/. The .env and
+# frontend/ sit next to the .exe, so anchor on sys.executable instead.
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    APP_DIR = Path(__file__).resolve().parent
+
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(APP_DIR / ".env")
 
 import httpx
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
@@ -42,7 +50,7 @@ logging.basicConfig(
 logger = logging.getLogger("relay")
 
 VPS_URL    = os.environ.get("VPS_URL",    "http://localhost:8000").rstrip("/")
-STATIC_DIR = os.environ.get("STATIC_DIR", str(Path(__file__).parent / "frontend"))
+STATIC_DIR = os.environ.get("STATIC_DIR", str(APP_DIR / "frontend"))
 RELAY_PORT = int(os.environ.get("RELAY_PORT", "8001"))
 
 # ── Broadcast hub ──────────────────────────────────────────────────────────────
@@ -239,8 +247,12 @@ async def proxy_api(path: str, request: Request) -> Response:
     url = f"{VPS_URL}/api/{path}"
     headers = {k: v for k, v in request.headers.items() if k.lower() not in {"host"}}
     body = await request.body()
+    # 5s connect timeout → fail fast when the VPS is unreachable, so the user
+    # sees "no internet" instead of waiting a full minute.
+    # 60s read timeout preserves headroom for the matcher on the VPS side.
+    timeout = httpx.Timeout(60.0, connect=5.0)
     try:
-        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             r = await client.request(
                 method=request.method,
                 url=url,
@@ -250,16 +262,22 @@ async def proxy_api(path: str, request: Request) -> Response:
             )
         resp_headers = {k: v for k, v in r.headers.items() if k.lower() not in _HOP_BY_HOP}
         return Response(content=r.content, status_code=r.status_code, headers=resp_headers)
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.ConnectTimeout):
         return Response(
-            content=json.dumps({"detail": "Cannot reach VPS server. Check your network connection."}),
+            content=json.dumps({"detail": "No internet connection. Please check your network and try again."}),
             status_code=503,
+            media_type="application/json",
+        )
+    except httpx.ReadTimeout:
+        return Response(
+            content=json.dumps({"detail": "The server is taking too long to respond. Please try again."}),
+            status_code=504,
             media_type="application/json",
         )
     except Exception as exc:
         logger.error("Proxy error for %s: %s", path, exc)
         return Response(
-            content=json.dumps({"detail": "Relay proxy error"}),
+            content=json.dumps({"detail": "Something went wrong. Please try again."}),
             status_code=502,
             media_type="application/json",
         )
@@ -315,4 +333,4 @@ if STATIC_DIR and Path(STATIC_DIR).is_dir():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("relay:app", host="127.0.0.1", port=RELAY_PORT, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=RELAY_PORT, reload=False)
