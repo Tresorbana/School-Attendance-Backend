@@ -65,19 +65,26 @@ def login(username: str, password: str, db: Session) -> dict:
                 "username": settings.ADMIN_USERNAME,
                 "full_name": settings.ADMIN_FULL_NAME,
                 "role": "admin",
+                "must_change_password": False,
             }
 
-    # 2. Users table
+    # 2. Users table — accept username OR email.
+    ident = username.strip()
     user: Optional[User] = (
         db.query(User)
-        .filter(User.username == username.strip(), User.is_active.is_(True))
+        .filter(
+            User.is_active.is_(True),
+            ((User.username == ident) | (User.email == ident.lower())),
+        )
         .first()
     )
     if user and verify_password(password, user.password_hash):
         return {
             "username": user.username,
+            "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
+            "must_change_password": bool(user.must_change_password),
         }
 
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect username or password.")
@@ -92,6 +99,7 @@ def create_token(user: dict) -> str:
         "sub": user["username"],
         "role": user["role"],
         "full_name": user["full_name"],
+        "email": user.get("email"),
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(hours=settings.JWT_EXPIRES_HOURS)).timestamp()),
     }
@@ -123,9 +131,22 @@ def require_admin(user: dict = Depends(current_user)) -> dict:
 
 
 def require_any_staff(user: dict = Depends(current_user)) -> dict:
-    """Allow admin and attendance roles."""
-    if user.get("role") not in ("admin", "attendance"):
+    """Allow admin, supervisor and attendance roles (station operators + reviewers)."""
+    if user.get("role") not in ("admin", "supervisor", "attendance"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Staff access required")
+    return user
+
+
+def require_supervisor(user: dict = Depends(current_user)) -> dict:
+    if user.get("role") not in ("admin", "supervisor"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Supervisor access required")
+    return user
+
+
+def require_portal_user(user: dict = Depends(current_user)) -> dict:
+    """Anyone who owns a portal account: employee, supervisor, admin."""
+    if user.get("role") not in ("admin", "supervisor", "employee"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Portal access required")
     return user
 
 
@@ -147,13 +168,18 @@ def change_password(current_password: str, new_password: str, user: dict, db: Se
         settings.ADMIN_PASSWORD = hashed
         return
 
-    # Users table
-    db_user = db.query(User).filter(User.username == username).first()
+    # Users table — look up by username OR email since portal users log in by email.
+    db_user = (
+        db.query(User)
+        .filter((User.username == username) | (User.email == (username or "").lower()))
+        .first()
+    )
     if not db_user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Account not found.")
     if not verify_password(current_password, db_user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect.")
     db_user.password_hash = hash_password(new_password)
+    db_user.must_change_password = False
     db.commit()
 
 

@@ -95,7 +95,10 @@ def init_db() -> None:
     """
     import logging
     logger = logging.getLogger("database")
-    from models import person, attendance, holiday, fingerprint_template, user, leave_request, notification  # noqa: F401
+    from models import (  # noqa: F401
+        person, attendance, holiday, fingerprint_template, user,
+        leave_request, notification, department, leave_policy, station,
+    )
 
     # Local SQLite — must succeed (it's a file on the same machine).
     TemplatesBase.metadata.create_all(templates_engine)
@@ -114,6 +117,7 @@ def init_db() -> None:
     # Remote Postgres — tolerate cold-start / transient failures.
     try:
         StructuredBase.metadata.create_all(structured_engine)
+        _apply_structured_migrations(structured_engine)
         logger.info("Structured DB schema ensured.")
     except Exception as exc:
         logger.warning(
@@ -121,3 +125,39 @@ def init_db() -> None:
             "Requests will reconnect on demand; Neon may be cold-starting.",
             exc.__class__.__name__,
         )
+
+
+# ── Lightweight schema migrations ──────────────────────────────────────────────
+#
+# SQLAlchemy's `create_all` creates missing tables but never alters existing ones.
+# For a few small columns added over time it's cheaper to run idempotent
+# ALTER TABLE ADD COLUMN IF NOT EXISTS statements than to pull in Alembic.
+# Every new column goes through here so schema drift doesn't accumulate.
+
+_STRUCTURED_MIGRATIONS: list[str] = [
+    "ALTER TABLE people ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+    "ALTER TABLE people ADD COLUMN IF NOT EXISTS department_id INTEGER",
+    "ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id INTEGER",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_people_email ON people (email)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_people_user_id ON people (user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_people_department_id ON people (department_id)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)",
+]
+
+
+def _apply_structured_migrations(engine) -> None:
+    import logging
+    import sqlalchemy as _sa
+
+    log = logging.getLogger("database")
+    with engine.connect() as conn:
+        for stmt in _STRUCTURED_MIGRATIONS:
+            try:
+                conn.execute(_sa.text(stmt))
+                conn.commit()
+            except Exception as exc:
+                # Log-and-continue: a failure on one ALTER shouldn't block the app.
+                log.warning("Migration skipped (%s): %s", exc.__class__.__name__, stmt)
+                conn.rollback()

@@ -7,47 +7,73 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from database import get_structured_db
-from models.user import User
+from models.user import USER_ROLES, User
 from services.auth import hash_password, require_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-_USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-\.]{3,50}$")
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_\-\.@]{3,100}$")
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
+
+def _clean_email(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    v = v.strip().lower()
+    if not v:
+        return None
+    if not _EMAIL_RE.match(v):
+        raise ValueError("Invalid email address")
+    return v
 
 
 class CreateUserDto(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
+    username: str = Field(..., min_length=3, max_length=100)
+    email: Optional[str] = Field(default=None, max_length=255)
     fullName: str = Field(..., min_length=2, max_length=200)
     password: str = Field(..., min_length=8, max_length=200)
     role: str = Field(default="attendance")
+    mustChangePassword: bool = False
 
     @field_validator("username")
     @classmethod
     def validate_username(cls, v: str) -> str:
         v = v.strip()
         if not _USERNAME_RE.match(v):
-            raise ValueError("Username may only contain letters, digits, underscores, hyphens, and dots")
+            raise ValueError("Username may only contain letters, digits, underscores, hyphens, dots and @")
         return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_email(v)
 
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: str) -> str:
-        if v not in ("admin", "attendance"):
-            raise ValueError("Role must be 'admin' or 'attendance'")
+        if v not in USER_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(USER_ROLES))}")
         return v
 
 
 class UpdateUserDto(BaseModel):
     fullName: Optional[str] = Field(default=None, min_length=2, max_length=200)
+    email: Optional[str] = Field(default=None, max_length=255)
     password: Optional[str] = Field(default=None, min_length=8, max_length=200)
     role: Optional[str] = None
     isActive: Optional[bool] = None
+    mustChangePassword: Optional[bool] = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_email(v)
 
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ("admin", "attendance"):
-            raise ValueError("Role must be 'admin' or 'attendance'")
+        if v is not None and v not in USER_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(USER_ROLES))}")
         return v
 
 
@@ -69,12 +95,18 @@ def create_user(
     if conflict:
         raise HTTPException(status.HTTP_409_CONFLICT, f'Username "{dto.username}" is already taken.')
 
+    email = dto.email
+    if email and db.query(User).filter(User.email == email).first():
+        raise HTTPException(status.HTTP_409_CONFLICT, f'Email "{email}" is already in use.')
+
     new_user = User(
         username=dto.username,
+        email=email,
         full_name=dto.fullName.strip(),
         password_hash=hash_password(dto.password),
         role=dto.role,
         is_active=True,
+        must_change_password=dto.mustChangePassword,
     )
     db.add(new_user)
     db.commit()
@@ -110,12 +142,26 @@ def update_user(
 
     if dto.fullName is not None:
         target.full_name = dto.fullName.strip()
+    if dto.email is not None:
+        new_email = dto.email
+        if new_email != (target.email or ""):
+            conflict = (
+                db.query(User)
+                .filter(User.email == new_email, User.id != user_id)
+                .first()
+            )
+            if conflict:
+                raise HTTPException(status.HTTP_409_CONFLICT, f'Email "{new_email}" is already in use.')
+            target.email = new_email
     if dto.password is not None:
         target.password_hash = hash_password(dto.password)
+        target.must_change_password = False
     if dto.role is not None:
         target.role = dto.role
     if dto.isActive is not None:
         target.is_active = dto.isActive
+    if dto.mustChangePassword is not None:
+        target.must_change_password = dto.mustChangePassword
 
     db.commit()
     db.refresh(target)

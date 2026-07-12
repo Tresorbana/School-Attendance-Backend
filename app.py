@@ -14,8 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from database import init_db
 from routers import (
-    auth, attendance, fingerprint, fingerprint_ws,
-    holidays, leave, notifications, people, reports, users,
+    auth, attendance, departments, fingerprint, fingerprint_ws,
+    holidays, leave, leave_policies, notifications, people, portal, reports, users,
 )
 from scanner.bridge_client import scanner_bridge
 
@@ -122,11 +122,14 @@ api_prefix = "/api"
 app.include_router(auth.router, prefix=api_prefix)
 app.include_router(users.router, prefix=api_prefix)
 app.include_router(people.router, prefix=api_prefix)
+app.include_router(departments.router, prefix=api_prefix)
 app.include_router(leave.router, prefix=api_prefix)
+app.include_router(leave_policies.router, prefix=api_prefix)
 app.include_router(notifications.router, prefix=api_prefix)
 app.include_router(holidays.router, prefix=api_prefix)
 app.include_router(attendance.router, prefix=api_prefix)
 app.include_router(reports.router, prefix=api_prefix)
+app.include_router(portal.router, prefix=api_prefix)
 app.include_router(fingerprint.router, prefix=api_prefix)
 app.include_router(fingerprint_ws.router)
 

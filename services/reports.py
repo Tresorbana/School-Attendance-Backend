@@ -11,12 +11,17 @@ from models.attendance import Attendance
 from models.holiday import Holiday
 from models.person import Person
 from services.attendance import get_daily_sessions
+from services.timezone import (
+    kigali_date_key,
+    kigali_day_bounds_utc,
+    kigali_month_bounds_utc,
+    to_kigali,
+    today_kigali,
+)
 
 
 def _today_bounds():
-    s = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    e = datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=999000)
-    return s, e
+    return kigali_day_bounds_utc(today_kigali())
 
 
 def daily(db: Session) -> List[dict]:
@@ -28,7 +33,8 @@ def daily(db: Session) -> List[dict]:
     )
     by_hour: Dict[int, int] = {}
     for (ts,) in rows:
-        by_hour[ts.hour] = by_hour.get(ts.hour, 0) + 1
+        local_hour = to_kigali(ts).hour
+        by_hour[local_hour] = by_hour.get(local_hour, 0) + 1
 
     buckets = []
     for h in range(24):
@@ -39,7 +45,9 @@ def daily(db: Session) -> List[dict]:
 
 
 def _daily_buckets(db: Session, days: int) -> List[dict]:
-    s = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    today = today_kigali()
+    start_local = today - timedelta(days=days - 1)
+    s, _ = kigali_day_bounds_utc(start_local)
     rows = (
         db.query(Attendance.timestamp)
         .filter(Attendance.timestamp >= s, Attendance.type == "check-in")
@@ -47,12 +55,12 @@ def _daily_buckets(db: Session, days: int) -> List[dict]:
     )
     by_date: Dict[str, int] = {}
     for (ts,) in rows:
-        key = ts.date().isoformat()
+        key = kigali_date_key(ts)
         by_date[key] = by_date.get(key, 0) + 1
 
     buckets = []
     for i in range(days - 1, -1, -1):
-        d = datetime.utcnow().date() - timedelta(days=i)
+        d = today - timedelta(days=i)
         key = d.isoformat()
         label = d.strftime("%b %d").replace(" 0", " ")
         buckets.append({"date": key, "count": by_date.get(key, 0), "label": label})
@@ -92,11 +100,11 @@ def by_role(db: Session) -> List[dict]:
 
 
 def calendar_month(db: Session, year: int, month: int) -> List[dict]:
-    start = datetime(year, month, 1)
-    end = (
-        datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
-    ) - timedelta(milliseconds=1)
-    days_in_month = (end.date() - start.date()).days + 1
+    start, end = kigali_month_bounds_utc(year, month)
+    last_day = (
+        date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    ) - timedelta(days=1)
+    days_in_month = last_day.day
 
     rows = (
         db.query(Attendance.timestamp, Attendance.person_id)
@@ -105,7 +113,7 @@ def calendar_month(db: Session, year: int, month: int) -> List[dict]:
     )
     by_date: Dict[str, set] = {}
     for ts, pid in rows:
-        key = ts.date().isoformat()
+        key = kigali_date_key(ts)
         by_date.setdefault(key, set()).add(pid)
 
     result = []
@@ -116,9 +124,11 @@ def calendar_month(db: Session, year: int, month: int) -> List[dict]:
 
 
 def _holiday_dates(db: Session, from_: datetime, to: datetime) -> Set[str]:
+    start = to_kigali(from_).date().isoformat()
+    end = to_kigali(to).date().isoformat()
     rows = (
         db.query(Holiday.date)
-        .filter(Holiday.date >= from_.date().isoformat(), Holiday.date <= to.date().isoformat())
+        .filter(Holiday.date >= start, Holiday.date <= end)
         .all()
     )
     return {r[0] for r in rows}
@@ -127,12 +137,14 @@ def _holiday_dates(db: Session, from_: datetime, to: datetime) -> Set[str]:
 def _approved_leave_dates(db: Session, from_: datetime, to: datetime) -> Dict[int, Set[str]]:
     """Build a map of person_id → set of leave dates for approved leaves in the range."""
     from models.leave_request import LeaveRequest
+    start = to_kigali(from_).date().isoformat()
+    end = to_kigali(to).date().isoformat()
     reqs = (
         db.query(LeaveRequest)
         .filter(
             LeaveRequest.status == "approved",
-            LeaveRequest.to_date >= from_.date().isoformat(),
-            LeaveRequest.from_date <= to.date().isoformat(),
+            LeaveRequest.to_date >= start,
+            LeaveRequest.from_date <= end,
         )
         .all()
     )
@@ -170,16 +182,149 @@ def _schedule_net_minutes(start: Optional[str], end: Optional[str]) -> int:
     return max(0, (eh * 60 + em) - (sh * 60 + sm))
 
 
+def daily_detail(db: Session, target: date) -> dict:
+    """One row per employee for the given calendar day (Kigali time)."""
+    from_utc, to_utc = kigali_day_bounds_utc(target)
+    holidays = _holiday_dates(db, from_utc, to_utc)
+    leave_dates = _approved_leave_dates(db, from_utc, to_utc)
+    sessions_list = get_daily_sessions(db, from_utc, to_utc, None, holidays, leave_dates)
+    by_person = {s["person_id"]: s for s in sessions_list}
+
+    is_weekend = target.weekday() >= 5
+    is_holiday = target.isoformat() in holidays
+    late_grace = settings.LATE_GRACE_MINUTES
+    early_grace = settings.EARLY_DEPARTURE_GRACE_MINUTES
+
+    people = db.query(Person).order_by(Person.name.asc()).all()
+    rows = []
+    summary = {
+        "total": len(people),
+        "present": 0,
+        "absent": 0,
+        "onLeave": 0,
+        "late": 0,
+        "missingCheckout": 0,
+        "workingDay": (not is_weekend) and (not is_holiday),
+    }
+
+    for person in people:
+        session = by_person.get(person.id)
+        on_leave = target.isoformat() in leave_dates.get(person.id, set())
+
+        if is_weekend:
+            status_key = "weekend"
+        elif is_holiday:
+            status_key = "holiday"
+        elif on_leave:
+            status_key = "on-leave"
+            summary["onLeave"] += 1
+        elif session and session.get("checkIn"):
+            status_key = "present"
+            summary["present"] += 1
+            if session.get("delayMinutes") and session["delayMinutes"] > late_grace:
+                summary["late"] += 1
+            if session.get("missedCheckout"):
+                summary["missingCheckout"] += 1
+        else:
+            status_key = "absent"
+            summary["absent"] += 1
+
+        rows.append({
+            "personId": person.id,
+            "employeeId": person.employee_id,
+            "name": person.name,
+            "email": person.email,
+            "role": person.role,
+            "department": person.department,
+            "departmentId": person.department_id,
+            "scheduleStart": person.schedule_start,
+            "scheduleEnd": person.schedule_end,
+            "status": status_key,
+            "checkIn": session.get("checkIn") if session else None,
+            "checkOut": session.get("checkOut") if session else None,
+            "workedMinutes": session.get("workedMinutes") if session else None,
+            "breakMinutes": session.get("breakMinutes", 0) if session else 0,
+            "delayMinutes": session.get("delayMinutes") if session else None,
+            "earlyDepartureMinutes": session.get("earlyDepartureMinutes") if session else None,
+            "overtimeMinutes": session.get("overtimeMinutes") if session else None,
+            "missedCheckout": bool(session.get("missedCheckout")) if session else False,
+            "emergencyCheckout": bool(session.get("emergencyCheckout")) if session else False,
+            "isLate": bool(session and session.get("delayMinutes") and session["delayMinutes"] > late_grace),
+            "isEarlyLeave": bool(
+                session and session.get("earlyDepartureMinutes")
+                and session["earlyDepartureMinutes"] > early_grace
+            ),
+        })
+
+    return {
+        "date": target.isoformat(),
+        "isWeekend": is_weekend,
+        "isHoliday": is_holiday,
+        "summary": summary,
+        "rows": rows,
+    }
+
+
+def daily_detail_csv(db: Session, target: date) -> str:
+    report = daily_detail(db, target)
+    buf = StringIO()
+    buf.write('"SAMS — Staff Attendance Management"\r\n')
+    buf.write(f'"Daily Report — {target.isoformat()}"\r\n')
+    buf.write(f'"Generated","{to_kigali(datetime.utcnow()).isoformat()}"\r\n\r\n')
+    buf.write(
+        "Employee ID,Name,Role,Department,Status,"
+        "Check-in,Break start,Break end,Check-out,"
+        "Worked (hrs),Overtime (hrs),Late (min)\r\n"
+    )
+    # get_daily_sessions doesn't emit break-start / break-end times separately;
+    # re-query the raw events for that.
+    from_utc, to_utc = kigali_day_bounds_utc(target)
+    events = (
+        db.query(Attendance)
+        .options(joinedload(Attendance.person))
+        .filter(Attendance.timestamp >= from_utc, Attendance.timestamp <= to_utc)
+        .all()
+    )
+    break_by_person: Dict[int, Dict[str, str]] = {}
+    for ev in events:
+        if ev.type not in ("break-start", "break-end"):
+            continue
+        break_by_person.setdefault(ev.person_id, {})
+        # Keep the first break-start and the last break-end.
+        if ev.type == "break-start" and "start" not in break_by_person[ev.person_id]:
+            break_by_person[ev.person_id]["start"] = to_kigali(ev.timestamp).strftime("%H:%M")
+        elif ev.type == "break-end":
+            break_by_person[ev.person_id]["end"] = to_kigali(ev.timestamp).strftime("%H:%M")
+
+    for row in report["rows"]:
+        bp = break_by_person.get(row["personId"], {})
+        worked = (row["workedMinutes"] or 0) / 60
+        overtime = (row["overtimeMinutes"] or 0) / 60
+        late_min = row["delayMinutes"] or 0
+        buf.write(
+            f'"{_csv_escape(row["employeeId"] or "")}",'
+            f'"{_csv_escape(row["name"])}",'
+            f'"{_csv_escape(row["role"])}",'
+            f'"{_csv_escape(row["department"] or "")}",'
+            f'{row["status"]},'
+            f'{row["checkIn"] or ""},'
+            f'{bp.get("start", "")},'
+            f'{bp.get("end", "")},'
+            f'{row["checkOut"] or ""},'
+            f'{worked:.2f},'
+            f'{overtime:.2f},'
+            f'{late_min}\r\n'
+        )
+    return buf.getvalue()
+
+
 def monthly_working_hours(
     db: Session,
     year: int,
     month: int,
     person_id: Optional[int] = None,
 ) -> List[dict]:
-    from_ = datetime(year, month, 1)
-    to = (
-        datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
-    ) - timedelta(milliseconds=1)
+    from_, to = kigali_month_bounds_utc(year, month)
 
     holidays = _holiday_dates(db, from_, to)
     leave_dates = _approved_leave_dates(db, from_, to)
@@ -189,17 +334,25 @@ def monthly_working_hours(
     late_grace = settings.LATE_GRACE_MINUTES
     early_grace = settings.EARLY_DEPARTURE_GRACE_MINUTES
 
+    # Group sessions by person for aggregate math.
     by_person: Dict[int, List[dict]] = {}
     for s in sessions:
         by_person.setdefault(s["person_id"], []).append(s)
 
-    rows = []
-    for _pid, person_sessions in by_person.items():
-        first = person_sessions[0]
-        sched_min = _schedule_net_minutes(first["scheduleStart"], first["scheduleEnd"])
+    # IMPORTANT: enumerate every Person, not just those with attendance rows.
+    # Previously, people with zero scans this month never appeared — hence the
+    # "3 in the DB but only 1 in report" bug reported by admins.
+    people_q = db.query(Person).order_by(Person.name.asc())
+    if person_id is not None:
+        people_q = people_q.filter(Person.id == person_id)
+    people = people_q.all()
 
-        # Count approved leave days for this person this month
-        person_leave_days = len(leave_dates.get(_pid, set()))
+    rows = []
+    for person in people:
+        person_sessions = by_person.get(person.id, [])
+        sched_min = _schedule_net_minutes(person.schedule_start, person.schedule_end)
+
+        person_leave_days = len(leave_dates.get(person.id, set()))
         effective_required_days = max(0, required_days - person_leave_days)
 
         present = len(person_sessions)
@@ -228,13 +381,14 @@ def monthly_working_hours(
         missed_checkout_days = sum(1 for s in person_sessions if s.get("missedCheckout"))
 
         rows.append({
-            "person_id": first["person_id"],
-            "employee_id": first["employee_id"],
-            "name": first["name"],
-            "role": first["role"],
-            "department": first.get("department"),
-            "scheduleStart": first["scheduleStart"],
-            "scheduleEnd": first["scheduleEnd"],
+            "person_id": person.id,
+            "employee_id": person.employee_id,
+            "name": person.name,
+            "role": person.role,
+            "department": person.department,
+            "departmentId": person.department_id,
+            "scheduleStart": person.schedule_start,
+            "scheduleEnd": person.schedule_end,
             "requiredDays": effective_required_days,
             "leaveDays": person_leave_days,
             "presentDays": present,
@@ -273,13 +427,17 @@ def export_csv(
         .order_by(Attendance.timestamp.asc())
     )
     if from_:
-        q = q.filter(Attendance.timestamp >= datetime.fromisoformat(from_))
+        start_local = date.fromisoformat(from_)
+        start_utc, _ = kigali_day_bounds_utc(start_local)
+        q = q.filter(Attendance.timestamp >= start_utc)
     if to:
-        q = q.filter(Attendance.timestamp < datetime.fromisoformat(to) + timedelta(days=1))
+        end_local = date.fromisoformat(to)
+        _, end_utc = kigali_day_bounds_utc(end_local)
+        q = q.filter(Attendance.timestamp <= end_utc)
     records = q.all()
 
     buf = StringIO()
-    generated = datetime.utcnow().isoformat()
+    generated = to_kigali(datetime.utcnow()).isoformat()
     period = f"{from_ or 'all time'} to {to or 'today'}" if (from_ or to) else "all records"
     buf.write('"SAMS — Staff Attendance Report"\r\n')
     buf.write(f'"Generated","{generated}"\r\n')
@@ -287,16 +445,16 @@ def export_csv(
     buf.write(f'"Total records","{len(records)}"\r\n\r\n')
     buf.write("Date,Employee ID,Name,Role,Department,Type,Time,Emergency\r\n")
     for r in records:
-        ts = r.timestamp
+        ts_local = to_kigali(r.timestamp) if r.timestamp else None
         p = r.person
         buf.write(
-            f'{ts.strftime("%d/%m/%Y") if ts else ""},'
+            f'{ts_local.strftime("%d/%m/%Y") if ts_local else ""},'
             f'"{_csv_escape(p.employee_id if p else "")}",'
             f'"{_csv_escape(p.name if p else "")}",'
             f'"{_csv_escape(p.role if p else "")}",'
             f'"{_csv_escape(p.department if p else "")}",'
             f'{r.type},'
-            f'{ts.strftime("%I:%M %p") if ts else ""},'
+            f'{ts_local.strftime("%I:%M %p") if ts_local else ""},'
             f'{"Yes" if r.is_emergency else ""}\r\n'
         )
     return buf.getvalue()
@@ -308,7 +466,7 @@ def export_monthly_csv(db: Session, year: int, month: int) -> str:
     month_name = datetime(year, month, 1).strftime("%B %Y")
     buf.write('"SAMS — Staff Attendance Management"\r\n')
     buf.write(f'"Monthly Working Hours Report — {month_name}"\r\n')
-    buf.write(f'"Generated","{datetime.utcnow().isoformat()}"\r\n\r\n')
+    buf.write(f'"Generated","{to_kigali(datetime.utcnow()).isoformat()}"\r\n\r\n')
     buf.write(
         "Employee ID,Name,Role,Department,Schedule,"
         "Required Days,Leave Days,Present Days,Absent Days,"

@@ -1,5 +1,5 @@
 """Report endpoints. Export routes require a ?token= query param for browser downloads."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from database import get_structured_db
 from services import reports as svc
 from services.auth import decode_token, require_admin, require_any_staff
+from services.timezone import today_kigali
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -22,6 +23,43 @@ def _require_download_token(token: Optional[str] = Query(default=None)) -> dict:
 @router.get("/daily")
 def daily(user: dict = Depends(require_admin), db: Session = Depends(get_structured_db)):
     return svc.daily(db)
+
+
+def _parse_target_date(value: Optional[str]) -> date:
+    if not value:
+        return today_kigali()
+    try:
+        return date.fromisoformat(value.strip()[:10])
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "date must be YYYY-MM-DD")
+
+
+@router.get("/daily-detail")
+def daily_detail(
+    date: Optional[str] = Query(default=None, description="YYYY-MM-DD; defaults to today (Kigali)"),
+    user: dict = Depends(require_admin),
+    db: Session = Depends(get_structured_db),
+):
+    target = _parse_target_date(date)
+    return svc.daily_detail(db, target)
+
+
+@router.get("/export-daily")
+def export_daily_csv(
+    date: Optional[str] = Query(default=None),
+    user: dict = Depends(_require_download_token),
+    db: Session = Depends(get_structured_db),
+):
+    target = _parse_target_date(date)
+    csv_data = svc.daily_detail_csv(db, target)
+    return Response(
+        content=csv_data,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="sams-daily-{target.isoformat()}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/weekly")
@@ -76,7 +114,7 @@ def export_csv(
     db: Session = Depends(get_structured_db),
 ):
     csv_data = svc.export_csv(db, from_, to)
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = today_kigali().strftime("%Y-%m-%d")
     return Response(
         content=csv_data,
         media_type="text/csv; charset=utf-8",

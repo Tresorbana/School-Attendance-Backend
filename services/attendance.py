@@ -8,6 +8,12 @@ from sqlalchemy.orm import Session, joinedload
 from config import settings
 from models.attendance import Attendance
 from models.person import Person
+from services.timezone import (
+    kigali_date_key,
+    kigali_day_bounds_utc,
+    to_kigali,
+    today_kigali,
+)
 
 AttendanceType = str   # 'check-in' | 'check-out' | 'break-start' | 'break-end'
 AttendanceStage = str  # 'checked-out' | 'checked-in' | 'on-break' | 'returned-from-break'
@@ -55,7 +61,7 @@ def get_last_for_person(db: Session, person_id: int) -> Optional[Attendance]:
 
 
 def get_current_stage(db: Session, person_id: int) -> AttendanceStage:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start, _ = kigali_day_bounds_utc(today_kigali())
     todays = (
         db.query(Attendance)
         .filter(Attendance.person_id == person_id, Attendance.timestamp >= today_start)
@@ -206,7 +212,7 @@ def get_all(
 
 
 def get_stats(db: Session) -> dict:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start, _ = kigali_day_bounds_utc(today_kigali())
 
     total_people = db.query(func.count(Person.id)).scalar() or 0
 
@@ -236,7 +242,7 @@ def get_stats(db: Session) -> dict:
 # ── Daily session builder (for reports) ────────────────────────────────
 
 def _to_hhmm(d: datetime) -> str:
-    return d.strftime("%H:%M")
+    return to_kigali(d).strftime("%H:%M")
 
 
 def _time_to_min(t: str) -> int:
@@ -272,7 +278,7 @@ def get_daily_sessions(
 
     grouped: Dict[int, Dict[str, List[Attendance]]] = {}
     for r in records:
-        date_key = r.timestamp.strftime("%Y-%m-%d")
+        date_key = kigali_date_key(r.timestamp)
         grouped.setdefault(r.person_id, {}).setdefault(date_key, []).append(r)
 
     sessions: List[dict] = []
