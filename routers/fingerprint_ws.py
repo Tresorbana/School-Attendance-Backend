@@ -31,7 +31,6 @@ class _Hub:
     def __init__(self) -> None:
         self._clients: Set[WebSocket] = set()
         self.enrollment_clients: Set[WebSocket] = set()
-        self.login_clients: Set[WebSocket] = set()
         self.next_mode: str = "auto"
         self._lock = asyncio.Lock()
 
@@ -43,7 +42,6 @@ class _Hub:
         async with self._lock:
             self._clients.discard(ws)
             self.enrollment_clients.discard(ws)
-            self.login_clients.discard(ws)
 
     async def broadcast(self, payload: dict) -> None:
         msg = json.dumps(payload, default=str)
@@ -112,19 +110,6 @@ async def _handle_scan_event(evt: dict) -> None:
         return
 
     png_b64 = base64.b64encode(png).decode("ascii")
-
-    # If someone is armed for biometric login, hand them the raw image and
-    # DO NOT record attendance — otherwise a login attempt would clock people in.
-    if hub.login_clients:
-        msg = json.dumps({"type": "login_capture", "image": png_b64})
-        for c in list(hub.login_clients):
-            try:
-                await c.send_text(msg)
-            except Exception:
-                pass
-        hub.login_clients.clear()
-        return
-
     await hub.broadcast({"type": "processing"})
 
     try:
@@ -218,13 +203,6 @@ async def fingerprint_ws(ws: WebSocket, token: str = Query(default="")) -> None:
 
             elif event == "cancel_enrollment":
                 hub.enrollment_clients.discard(ws)
-
-            elif event == "arm_login":
-                hub.login_clients.add(ws)
-                await hub.send_one(ws, {"type": "login_armed"})
-
-            elif event == "cancel_login":
-                hub.login_clients.discard(ws)
 
             elif event == "set_mode":
                 mode = data.get("mode")

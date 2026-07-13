@@ -137,10 +137,42 @@ def require_any_staff(user: dict = Depends(current_user)) -> dict:
     return user
 
 
-def require_supervisor(user: dict = Depends(current_user)) -> dict:
-    if user.get("role") not in ("admin", "supervisor"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Supervisor access required")
-    return user
+def require_supervisor(
+    user: dict = Depends(current_user),
+    db: Session = Depends(get_structured_db),
+) -> dict:
+    """Allow admins and any user who is the supervisor of at least one department.
+
+    We check the JWT role first (fast path); if that's not enough, we look up
+    whether the caller's Person row is referenced by a Department. This means
+    a user assigned as supervisor after login still gets access without having
+    to sign out and back in for a fresh JWT.
+    """
+    role = user.get("role")
+    if role in ("admin", "supervisor"):
+        return user
+
+    # Fallback: match on email → Person → Department.supervisor_person_id.
+    from models.department import Department
+    from models.person import Person
+
+    identifier = user.get("email") or user.get("sub")
+    if identifier:
+        person = (
+            db.query(Person)
+            .filter((Person.email == identifier) | (Person.name == user.get("full_name")))
+            .first()
+        )
+        if person:
+            supervises = (
+                db.query(Department)
+                .filter(Department.supervisor_person_id == person.id)
+                .first()
+            )
+            if supervises:
+                return user
+
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Supervisor access required")
 
 
 def require_portal_user(user: dict = Depends(current_user)) -> dict:

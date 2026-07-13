@@ -323,6 +323,7 @@ def monthly_working_hours(
     year: int,
     month: int,
     person_id: Optional[int] = None,
+    department_id: Optional[int] = None,
 ) -> List[dict]:
     from_, to = kigali_month_bounds_utc(year, month)
 
@@ -345,6 +346,8 @@ def monthly_working_hours(
     people_q = db.query(Person).order_by(Person.name.asc())
     if person_id is not None:
         people_q = people_q.filter(Person.id == person_id)
+    if department_id is not None:
+        people_q = people_q.filter(Person.department_id == department_id)
     people = people_q.all()
 
     rows = []

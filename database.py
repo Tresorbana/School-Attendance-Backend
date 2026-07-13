@@ -118,6 +118,8 @@ def init_db() -> None:
     try:
         StructuredBase.metadata.create_all(structured_engine)
         _apply_structured_migrations(structured_engine)
+        _backfill_portal_users()
+        _backfill_supervisor_roles()
         logger.info("Structured DB schema ensured.")
     except Exception as exc:
         logger.warning(
@@ -127,24 +129,150 @@ def init_db() -> None:
         )
 
 
+def _backfill_portal_users() -> None:
+    """Create User rows for people who have an email but no linked portal account.
+
+    Fixes any records where an admin added an email through Staff Roster
+    before the PATCH endpoint was wired to auto-create User rows.
+    """
+    import logging
+    from models.person import Person
+    from models.user import User
+
+    log = logging.getLogger("database")
+    session = StructuredSession()
+    try:
+        broken = (
+            session.query(Person)
+            .filter(Person.email.isnot(None), Person.user_id.is_(None))
+            .all()
+        )
+        if not broken:
+            return
+
+        # Import lazily to avoid circular imports at module load.
+        from services.auth import hash_password
+        default_hash = hash_password("Password123!")
+        created = 0
+        for person in broken:
+            email = (person.email or "").lower()
+            if not email:
+                continue
+            # Skip if a User with this email already exists (shouldn't happen but be safe).
+            existing = session.query(User).filter(User.email == email).first()
+            if existing:
+                person.user_id = existing.id
+                created += 1
+                continue
+
+            username = email
+            suffix = 2
+            while session.query(User).filter(User.username == username).first():
+                username = f"{email}-{suffix}"
+                suffix += 1
+
+            portal_user = User(
+                username=username,
+                email=email,
+                full_name=person.name,
+                password_hash=default_hash,
+                role="employee",
+                is_active=True,
+                must_change_password=True,
+            )
+            session.add(portal_user)
+            session.flush()
+            person.user_id = portal_user.id
+            created += 1
+
+        if created:
+            session.commit()
+            log.info("Portal-user backfill created %d account(s).", created)
+    except Exception as exc:
+        log.warning("Portal-user backfill skipped (%s).", exc.__class__.__name__)
+        session.rollback()
+    finally:
+        session.close()
+
+
+def _backfill_supervisor_roles() -> None:
+    """Promote existing department supervisors from `employee` to `supervisor`.
+
+    Fixes the pre-existing state where an admin assigned a Department's
+    supervisor but the linked User.role stayed at `employee`, causing 403s
+    on /api/portal/team*.
+    """
+    import logging
+    from models.department import Department
+    from models.person import Person
+    from models.user import User
+
+    log = logging.getLogger("database")
+    session = StructuredSession()
+    try:
+        rows = (
+            session.query(User)
+            .join(Person, Person.user_id == User.id)
+            .join(Department, Department.supervisor_person_id == Person.id)
+            .filter(User.role == "employee")
+            .distinct()
+            .all()
+        )
+        if not rows:
+            return
+        for u in rows:
+            u.role = "supervisor"
+        session.commit()
+        log.info("Supervisor-role backfill promoted %d account(s).", len(rows))
+    except Exception as exc:
+        log.warning("Supervisor-role backfill skipped (%s).", exc.__class__.__name__)
+        session.rollback()
+    finally:
+        session.close()
+
+
 # ── Lightweight schema migrations ──────────────────────────────────────────────
 #
 # SQLAlchemy's `create_all` creates missing tables but never alters existing ones.
-# For a few small columns added over time it's cheaper to run idempotent
-# ALTER TABLE ADD COLUMN IF NOT EXISTS statements than to pull in Alembic.
-# Every new column goes through here so schema drift doesn't accumulate.
+# Rather than pulling in Alembic for a handful of ADD COLUMN statements, we
+# check `PRAGMA table_info` / `information_schema.columns` and run a plain
+# `ALTER TABLE ADD COLUMN` only when the column is missing. This keeps the
+# migration idempotent on both SQLite and Postgres — SQLite doesn't support
+# `ADD COLUMN IF NOT EXISTS`, which is what silently broke the previous
+# revision on local dev DBs.
 
-_STRUCTURED_MIGRATIONS: list[str] = [
-    "ALTER TABLE people ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
-    "ALTER TABLE people ADD COLUMN IF NOT EXISTS department_id INTEGER",
-    "ALTER TABLE people ADD COLUMN IF NOT EXISTS user_id INTEGER",
+# (table, column, definition) — definition must be a plain-SQL column decl.
+_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("people", "email", "VARCHAR(255)"),
+    ("people", "department_id", "INTEGER"),
+    ("people", "user_id", "INTEGER"),
+    ("users", "email", "VARCHAR(255)"),
+    ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT 0"),
+]
+
+# Indexes are portable — SQLite and Postgres both accept "CREATE ... IF NOT EXISTS".
+_INDEX_MIGRATIONS: list[str] = [
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_people_email ON people (email)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_people_user_id ON people (user_id)",
     "CREATE INDEX IF NOT EXISTS ix_people_department_id ON people (department_id)",
-    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)",
-    "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)",
 ]
+
+
+def _existing_columns(conn, dialect: str, table: str) -> set[str]:
+    import sqlalchemy as _sa
+    if dialect == "sqlite":
+        rows = conn.execute(_sa.text(f"PRAGMA table_info({table})")).fetchall()
+        return {row[1] for row in rows}
+    # Postgres and others: rely on information_schema.
+    rows = conn.execute(
+        _sa.text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = :t"
+        ),
+        {"t": table},
+    ).fetchall()
+    return {row[0] for row in rows}
 
 
 def _apply_structured_migrations(engine) -> None:
@@ -152,12 +280,34 @@ def _apply_structured_migrations(engine) -> None:
     import sqlalchemy as _sa
 
     log = logging.getLogger("database")
+    dialect = engine.dialect.name  # 'sqlite' | 'postgresql' | ...
+
     with engine.connect() as conn:
-        for stmt in _STRUCTURED_MIGRATIONS:
+        # Add columns that are missing.
+        cache: dict[str, set[str]] = {}
+        for table, column, decl in _COLUMN_MIGRATIONS:
+            try:
+                if table not in cache:
+                    cache[table] = _existing_columns(conn, dialect, table)
+                if column in cache[table]:
+                    continue
+                stmt = f"ALTER TABLE {table} ADD COLUMN {column} {decl}"
+                conn.execute(_sa.text(stmt))
+                conn.commit()
+                cache[table].add(column)
+                log.info("Added column %s.%s", table, column)
+            except Exception as exc:
+                log.warning(
+                    "Migration skipped (%s): ADD %s.%s — %s",
+                    exc.__class__.__name__, table, column, exc,
+                )
+                conn.rollback()
+
+        # Ensure supporting indexes.
+        for stmt in _INDEX_MIGRATIONS:
             try:
                 conn.execute(_sa.text(stmt))
                 conn.commit()
             except Exception as exc:
-                # Log-and-continue: a failure on one ALTER shouldn't block the app.
-                log.warning("Migration skipped (%s): %s", exc.__class__.__name__, stmt)
+                log.warning("Index skipped (%s): %s", exc.__class__.__name__, stmt)
                 conn.rollback()

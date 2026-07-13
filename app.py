@@ -104,13 +104,21 @@ async def security_headers(request: Request, call_next) -> Response:
 
 
 # ── CORS ────────────────────────────────────────────────────────────────
-if settings.NODE_ENV == "production" and settings.CORS_ORIGIN == "*":
-    logger.warning("CORS_ORIGIN is '*' in production — set it to your frontend domain in .env")
+# CORS_ORIGIN can be a comma-separated list, e.g.
+#   CORS_ORIGIN=https://admin.example.com,https://portal.example.com
+_cors_raw = (settings.CORS_ORIGIN or "*").strip()
+if _cors_raw == "*":
+    _cors_origins: list[str] = ["*"]
+else:
+    _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+
+if settings.NODE_ENV == "production" and _cors_origins == ["*"]:
+    logger.warning("CORS_ORIGIN is '*' in production — set it to your frontend domain(s) in .env")
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.CORS_ORIGIN] if settings.CORS_ORIGIN != "*" else ["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],

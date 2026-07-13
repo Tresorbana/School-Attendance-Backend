@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from database import get_structured_db, get_templates_db
 from models.department import Department
+from models.leave_policy import LeavePolicy
 from models.person import Person, PERSON_ROLES
 from models.user import User
 from models import fingerprint_template  # noqa: F401 ensure model registered
@@ -21,8 +22,28 @@ router = APIRouter(tags=["people"])
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 _EMP_ID_RE = re.compile(r"^[A-Za-z0-9\-_]{1,50}$")
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+_ROLE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _\-/&]{0,49}$")
 
 DEFAULT_PORTAL_PASSWORD = "Password123!"
+
+# Fallback annual leave quota for a role that gets used before an admin has
+# opened the Leave Policies page. Keeps the balance calc from silently
+# falling back to 20 when a brand-new role appears.
+_AUTO_POLICY_DAYS = 20
+
+
+def _clean_role(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if not _ROLE_RE.match(v):
+        raise ValueError(
+            "Role must start with a letter and use only letters, numbers, "
+            "spaces or - _ / & (max 50 chars)"
+        )
+    return v
 
 
 def _clean_email(v: Optional[str]) -> Optional[str]:
@@ -68,10 +89,10 @@ class EnrollDto(BaseModel):
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: str) -> str:
-        v = v.strip()
-        if v not in PERSON_ROLES:
-            raise ValueError(f"Role must be one of: {', '.join(sorted(PERSON_ROLES))}")
-        return v
+        cleaned = _clean_role(v)
+        if not cleaned:
+            raise ValueError("Role is required")
+        return cleaned
 
     @field_validator("employeeId")
     @classmethod
@@ -117,12 +138,7 @@ class UpdatePersonDto(BaseModel):
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return None
-        v = v.strip()
-        if v and v not in PERSON_ROLES:
-            raise ValueError(f"Role must be one of: {', '.join(sorted(PERSON_ROLES))}")
-        return v
+        return _clean_role(v)
 
     @field_validator("scheduleStart", "scheduleEnd")
     @classmethod
@@ -133,6 +149,16 @@ class UpdatePersonDto(BaseModel):
         if v and not _TIME_RE.match(v):
             raise ValueError("Time must be in HH:MM format")
         return v or None
+
+
+def _ensure_leave_policy(db: Session, role: str) -> None:
+    """Create a default LeavePolicy for a brand-new role so balance math has a value."""
+    if not role:
+        return
+    if db.query(LeavePolicy).filter(LeavePolicy.role == role).first():
+        return
+    db.add(LeavePolicy(role=role, annual_leave_days=_AUTO_POLICY_DAYS))
+    db.flush()
 
 
 def _apply_department_link(
@@ -303,11 +329,18 @@ def update_person(
                 )
         person.email = new_email
         if person.user_id:
+            # Existing portal account — keep its email in sync.
             linked = db.query(User).filter(User.id == person.user_id).first()
             if linked:
                 linked.email = new_email
+        elif new_email:
+            # No portal account yet but now we have an email — create one so the
+            # person can actually log in. Uses the default password.
+            db.flush()  # ensure person.id is set for the FK
+            _ensure_portal_user(db, person)
     if dto.role is not None:
         person.role = dto.role.strip()
+        _ensure_leave_policy(db, person.role)
     if dto.departmentId is not None:
         _apply_department_link(db, person, department_id=dto.departmentId)
     elif dto.department is not None:
@@ -376,11 +409,14 @@ def enroll(
                 f'Email "{email}" is already registered to another person.',
             )
 
+    role_value = (dto.role or "Staff").strip()
+    _ensure_leave_policy(db, role_value)
+
     person = Person(
         employee_id=dto.employeeId.strip() if dto.employeeId else None,
         name=dto.name.strip(),
         email=email,
-        role=(dto.role or "Staff").strip(),
+        role=role_value,
         department=dto.department.strip() if dto.department else None,
         schedule_start=dto.scheduleStart or None,
         schedule_end=dto.scheduleEnd or None,
