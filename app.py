@@ -2,6 +2,8 @@
 SAMS — Staff Attendance Management System backend.
 Listens on port 8000 with /api/* prefix.
 """
+import utils.transport
+import utils.session
 import asyncio
 import logging
 from contextlib import asynccontextmanager

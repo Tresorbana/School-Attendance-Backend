@@ -1,6 +1,4 @@
 # Secrets — never commit
-.env
-.env.*
 !.env.example
 
 # Runtime data — machine-local only
@@ -21,7 +19,8 @@ venv/
 .pytest_cache/
 
 # Editor / OS
-.vscode/
 .idea/
 .DS_Store
 Thumbs.db
+config.bat
+node_modules
